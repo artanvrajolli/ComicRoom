@@ -33,19 +33,19 @@ router.post("/upload",async (req,res)=>{
 })
 
 router.get("/:id",(req,res)=>{
-    var comic_folder_id = req.params.id;
-    // req.body.title
-    // req.body.author
-    // req.body.description   
-    comic_table.create({
-        savedFolder: comic_folder_id,
-        uid: req.session.id
-    }).then((data)=>{
-        console.log(data)
-        res.render("v_comicDetails");
-    }).catch((err)=>{
-        res.send(err)
-    })
+    // var comic_folder_id = req.params.id;
+    // // req.body.title
+    // // req.body.author
+    // // req.body.description   
+    // comic_table.create({
+    //     savedFolder: comic_folder_id,
+    //     uid: req.session.id
+    // }).then((data)=>{
+    //     console.log(data)
+    //     res.render("v_comicDetails");
+    // }).catch((err)=>{
+    //     res.send(err)
+    // })
     
 })
 

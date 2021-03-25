@@ -4,7 +4,7 @@ const stream= require('stream')
 const unrar = require('@node_js/unrar');
 const path = require('path');
 
-function extractComics(filename,extension,pathOutput = ""){
+async function extractComics(filename,extension,pathOutput = ""){
   try{
     fs.mkdirSync(process.cwd()+'/public/uploads/'+pathOutput)
   }catch(err){}
