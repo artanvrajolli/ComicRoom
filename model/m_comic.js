@@ -11,6 +11,10 @@ const comic_table = db.define("comics",{
         type:Sequelize.STRING(50),
         allowNull:true
     },
+    coverImage:{
+        type:Sequelize.STRING(100),
+        allowNull:true
+    },
     description:{
         type:Sequelize.STRING(1000),
         allowNull:true
@@ -20,6 +24,9 @@ const comic_table = db.define("comics",{
         allowNull:true
     },
     totalPages:{
+        type:Sequelize.INTEGER
+    },
+    uid:{
         type:Sequelize.INTEGER
     }
 })

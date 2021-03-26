@@ -3,6 +3,7 @@ const session = require('express-session')
 const fileUpload = require('express-fileupload')
 const app = express();
 const db = require('./config/database');
+const mainRouter = require('./routers/mainRouter')
 
 
 // session handler
@@ -19,7 +20,7 @@ app.use(fileUpload({
     useTempFiles : true,
     tempFileDir : __dirname+'/public/tmp/'
 }));
-
+//
 // set view engine to use .ejs files
 app.set('view engine','ejs');
 
@@ -31,15 +32,10 @@ app.use("/public",express.static(__dirname+"/public"));
 
 
 // routers
-// login router
-app.use("/login",require("./routers/r_login"));
-app.use("/comic",require("./routers/r_comic"));
-app.use("/register",require("./routers/r_register"));
+app.use('/',mainRouter)
 
 
-// begin test zone
 
-// end Testing Zone
 
 
 app.use((req,res)=>{
