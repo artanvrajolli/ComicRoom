@@ -13,7 +13,10 @@ router.get("/",(req,res,next)=>{
             [Op.not]:{
                 title:null
             }
-        }
+        },
+        order: [
+            ['id', 'DESC'],
+        ]
     }).then((data)=>{
         /// comics -> "id","title","coverImage","description","totalPages"
         res.render("v_comicGallery",{ comics:data })
@@ -84,6 +87,7 @@ router.get("/:id",(req,res)=>{
 router.post("/:id",(req,res)=>{
  // {"title":"asd","author":"asd","description":"asd","submit":"Finish"}
     var comic_folder_id = req.params.id;
+    //console.log(fs.readdirSync(process.cwd()+"/public/uploads/"+comic_folder_id)); // dev
     var part_file = fs.readdirSync(process.cwd()+"/public/uploads/"+comic_folder_id).filter(item => {
     const regex = /(?:APNG|AVIF|GIF|JPEG|PNG|SVG|WebP|JPG)$/i; // The image file formats that are most commonly used on the web are listed
     return item.match(regex) == null ? false : true;
