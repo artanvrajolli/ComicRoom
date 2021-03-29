@@ -1,8 +1,10 @@
 <%- include("header") %>
-    <form method="post">
-    <input type="text" name="title" placeholder="title"><br>
-    <input type="text" name="author" placeholder="author"><br>
-    <input type="text" name="description" placeholder="description"><br>
-    <input type="submit" value="Finish" name="submit">
+<div class="container justify-content-center">
+    <form method="post" class="col-md-5">
+        <input class="form-control" type="text" name="title" placeholder="title"><br>
+        <input  class="form-control" type="text" name="author" placeholder="author"><br>
+        <input  class="form-control" type="text" name="description" placeholder="description"><br>
+        <input class="btn btn-secondary" type="submit" value="Finish" name="submit">
     </form>
+</div>
 <%- include("footer") %>

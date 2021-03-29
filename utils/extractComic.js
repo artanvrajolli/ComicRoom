@@ -1,6 +1,5 @@
 const fs = require('fs');
 const unzip = require('unzip-stream')
-const stream= require('stream')
 const unrar = require('@node_js/unrar');
 const path = require('path');
 

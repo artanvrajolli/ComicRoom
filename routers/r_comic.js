@@ -3,7 +3,7 @@ const extractComics = require('../utils/extractComic');
 const Op = require('sequelize').Op
 const fs = require('fs')
 const router = require('express').Router();
-
+const {PostComicUpload} = require('../controller/c_comic')
 
 
 router.get("/",(req,res,next)=>{
@@ -11,12 +11,17 @@ router.get("/",(req,res,next)=>{
         attributes:["id","title","coverImage","description","totalPages","savedFolder"],
         where:{
             [Op.not]:{
-                title:null
+                [Op.or]:{
+                    title:null,
+                    coverImage: ""
+                }
             }
+            
         },
         order: [
             ['id', 'DESC'],
-        ]
+        ],
+        limit:12
     }).then((data)=>{
         /// comics -> "id","title","coverImage","description","totalPages"
         res.render("v_comicGallery",{ comics:data })
@@ -25,6 +30,33 @@ router.get("/",(req,res,next)=>{
     })
 })
 
+// ajax load 
+router.get("/ajax/:offset",(req,res)=>{
+
+    var offset_parma = req.params.offset;
+    comic_table.findAll({
+        attributes:["id","title","coverImage","description","totalPages","savedFolder"],
+        where:{
+            [Op.not]:{
+                [Op.or]:{
+                    title:null,
+                    coverImage: ""
+                }
+            }
+            
+        },
+        order: [
+            ['id', 'DESC'],
+        ],
+        offset : parseInt(offset_parma),
+        limit:12
+    }).then((data)=>{
+        res.send(data);
+    }).catch((err)=>{
+        res.send(err);
+    })
+
+})
 
 router.get("/show/:id",(req,res)=>{
     var comic_id = req.params.id;
@@ -57,27 +89,8 @@ router.get("/upload",(req,res,next)=>{
     res.render("v_comicUpload",{ msg: msg});
 })
 
-router.post("/upload",async (req,res)=>{
-    var extension = req.files.fileToUpload.name.split(".").pop();
-    if(!["cbz","cbr"].includes(extension)){
-        req.session.msg = "extension should be .cbz or .cbr";
-        res.redirect("/comic/upload")
-        return;
-    }
-    if(extension == "cbr"){
-        fs.renameSync(req.files.fileToUpload.tempFilePath,req.files.fileToUpload.tempFilePath+".rar")
-    }
-    var comicFolder_Id = "comic_"+new Date().getTime();
-    extractComics(req.files.fileToUpload.tempFilePath,extension,comicFolder_Id);
-    comic_table.create({
-        savedFolder: comicFolder_Id,
-        uid: 1 // placeholder should be req.session.userData.id or something
-    }).catch((err)=>{
-        console.log(err);
-    })
-    
-    res.redirect("/comic/"+comicFolder_Id)
-})
+// post upload
+router.post("/upload",PostComicUpload)
 
 router.get("/:id",(req,res)=>{
     var comic_folder_id = req.params.id;
