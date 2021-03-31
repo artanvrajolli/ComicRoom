@@ -15,18 +15,19 @@ async function extractComics(filename,extension,pathOutput = ""){
         return 'unZIP mode'
     }else{
         // cbr -> rar -> image
-        const src = path.join(filename);
+        const src = filename;
         const dest = process.cwd()+'/public/uploads/'+pathOutput;
+
         const command = 'e';
         const switches = ['-o+', '-idcd'];
-        (async () => { 
-          await unrar.uncompress({
-            src,
-            dest,
-            command,
-            switches,
-          });
-        })().catch(console.error);
+
+        await unrar.uncompress({
+          src,
+          dest,
+          command,
+          switches,
+        });
+
 
         return 'unRAR mode'
     }

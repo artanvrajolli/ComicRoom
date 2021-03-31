@@ -4,8 +4,7 @@
 var loadmoreElement = document.getElementById("loadMore");
 var BodyComic = document.getElementById("bodyComic");
 var offset = 12;
-
-loadmoreElement.addEventListener("click",()=>{
+function LoadMorefun(){
     fetch("comic/ajax/"+offset).then(response => response.json())
     .then(data_array => {
         data_array.forEach((data)=>{
@@ -26,5 +25,20 @@ loadmoreElement.addEventListener("click",()=>{
         }
     });
     offset = offset + 12 // ose offset += 12
+}
+loadmoreElement.addEventListener("click",LoadMorefun)
 
+var isInViewport = function (elem,toleranc = 0) {
+    var bounding = elem.getBoundingClientRect();
+    return (
+bounding.top >= 0 &&
+bounding.bottom-toleranc <= (window.innerHeight || document.documentElement.clientHeight)
+    );
+};
+
+document.addEventListener("scroll",()=>{
+    console.log("sctrolled")
+    if(isInViewport(loadmoreElement,400)){
+        LoadMorefun();
+    }
 })

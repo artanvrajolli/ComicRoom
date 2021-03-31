@@ -3,3 +3,60 @@
   -webkit-transform: scale(1.05); /* Safari 3-8 */
   transform: scale(1.05); 
 }
+
+.content_c{
+  min-height: 1000px;
+}
+
+a{
+  text-decoration: none;
+}
+
+#infoComic{
+  background-color: rgba(0, 0, 0, 0.5);
+  position: fixed;
+  top: 25%;
+  right: 0;
+  border-radius: 4px 0px 0px 4px;
+  bottom: 25%;
+  z-index: 10;
+}
+
+#leftTrigger{
+  position: absolute;
+  top:25%;
+  bottom:25%;
+  left:0;
+  visibility: hidden;
+  padding:0px 10px 0px 10px;
+  z-index:1;
+  font-size:40px;
+  opacity: 0.1;
+}
+#rightTrigger{
+  position: absolute;
+  top:25%;
+  bottom:25%;
+  right:0;
+  visibility: hidden;
+  padding:0px 10px 0px 10px;
+  z-index:1;
+  font-size:40px;
+  opacity: 0.1;
+}
+
+i:hover{
+  -ms-transform: scale(1.05); /* IE 9 */
+  -webkit-transform: scale(1.05); /* Safari 3-8 */
+  transform: scale(1.05); 
+  color:white;
+}
+#backToComic{
+  z-index:2;
+  position: absolute;
+  font-size:30px;
+  opacity: 0.2;
+  left:5px;
+  top:0;
+  cursor: pointer;
+}

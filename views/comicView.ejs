@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ComicRoom - <%=comicTitle%></title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-eOJMYsd53ii+scO/bJGFsiCZc+5NDVN2yr8+0RDqr0Ql0h+rP48ckxlpbzKgwra6" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta3/dist/js/bootstrap.bundle.min.js" integrity="sha384-JEW9xMcG8R+pH31jmWH6WWP0WintQrMb4s7ZOdauHnUtxwoG2vI5DkLtS3qm9Ekf" crossorigin="anonymous"></script>
+    <link rel="shortcut icon" type="image/jpg" href="public/images/favicon.png"/>
+    <link rel="stylesheet" href="/public/css/comic.css">
+    <script src="https://kit.fontawesome.com/260c0dafd9.js" crossorigin="anonymous"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js" integrity="sha256-/xUj+3OJU5yExlq6GSYGSHk7tPXikynS7ogEvDej/m4=" crossorigin="anonymous"></script>
+</head>
+    <body class="h-100 text-white bg-dark" >
+        <div class="d-flex" id="backToComic">
+            <a href="/comic" style="color:rgb(99, 99, 99);">
+                <i class="fas fa-backspace "></i>
+            </a>
+        </div>
+        <div class="d-flex" style="z-index:2;position: absolute;font-size:30px;opacity: 0.2;right:5px;top:0;cursor: pointer;">
+            <b style="font-size: 20px;margin-right: 10px;">
+                <a id="currentPage">999</a>/<a id="totalPage">999</a>
+            </b>
+            <i id="infoComic_details" class="fas fa-info-circle"></i>
+        </div>
+        <div class="container d-flex justify-content-center" style="height:100vh;position: relative;">
+
+            <div class="d-flex" id="leftTrigger">
+                <i style="cursor: pointer;" class="fas fa-arrow-circle-left align-self-center"></i>
+            </div>
+            <img style="position: absolute;top:0;max-width: 100%;max-height: 100%;" class="img-fluid" id="mainImage" src="">
+            <div class="d-flex" id="rightTrigger">
+                <i style="cursor: pointer;" class="fas fa-arrow-circle-right align-self-center"></i>
+            </div>
+
+        </div>
+        <div id="infoComic" class="d-flex">
+            <div class="p-5 align-self-center">
+                <b style="border-bottom: 1px solid white;color:white;"><%=comic_Field.title%></b>
+                <p>
+                    <%=comic_Field.description%>
+                </p>
+                <p style="font-size: 10px;">
+                    Author:<br><%=comic_Field.author%>
+                </p>
+            </div>
+        </div>
+    </body>
+<script type="text/javascript">
+// comicImages 
+var comicImages = [<%-comicImages.join(",")%>];
+var comicImagesLength = comicImages.length;
+// comicFolder
+var comicFolder = "<%-savedFolder%>";
+var mainImage = document.getElementById("mainImage");
+var lastTime = 0;
+if(typeof window.localStorage[comicFolder] != "undefined"){
+    lastTime = parseInt(window.localStorage[comicFolder]);
+    if(lastTime > comicImagesLength){
+        lastTime = 0;
+    }
+}
+</script>
+<script src="/public/script/viewComic.js"></script>
+</html>

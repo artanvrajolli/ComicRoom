@@ -4,7 +4,7 @@ const fileUpload = require('express-fileupload')
 const app = express();
 const db = require('./config/database');
 const mainRouter = require('./routers/mainRouter')
-
+const fs = require('fs');
 
 // session handler
 app.use(session({
@@ -31,7 +31,7 @@ app.use(express.json())
 app.use("/public",express.static(__dirname+"/public"));
 
 
-// routers
+// routers for all routers 
 app.use('/',mainRouter)
 
 
@@ -56,4 +56,15 @@ db.sync();
 // listen server port 8082
 app.listen(8082,console.log("Server [Online]"))
 
+
+// clean tmp folder everytime on starup server
+fs.readdir("public/tmp", (err, files) => {
+    if (err) throw err;
+  
+    for (const file of files) {
+      fs.unlink(process.cwd()+"/public/tmp/"+file, err => {
+        if (err) throw err;
+      });
+    }
+  });
 
