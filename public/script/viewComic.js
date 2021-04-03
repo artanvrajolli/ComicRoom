@@ -7,10 +7,25 @@ window.addEventListener("contextmenu",(event_t)=>{
     event_t.preventDefault();
 })
 
+var cachedImage = document.getElementById("cachedImage");
+var closeInfoComic = document.getElementById("closeInfoComic");
+var backToStart = document.getElementById("backToStart");
+backToStart.addEventListener("click",()=>{
+    backToStartFun();
+})
+function backToStartFun(){
+    xView = 0;
+    mainImage.src = "/public/uploads/"+comicFolder+"/"+comicImages[xView];
+    backToStart.style.display = "none";
+    TriggerLeftorRight();
+}
 function rightTriggerArrow(event_t){
         event_t.preventDefault();
         xView++;
-        xView = xView % comicImagesLength;
+        if(xView >= comicImagesLength-1){
+            xView = comicImagesLength-1;
+            backToStart.style.display = "";
+        }
         mainImage.src = "/public/uploads/"+comicFolder+"/"+comicImages[xView] ;
         TriggerLeftorRight();
 }
@@ -30,17 +45,21 @@ function TriggerLeftorRight(){
     document.getElementById("rightTrigger").style.visibility = "visible";
     document.getElementById("leftTrigger").style.visibility = "visible";
     document.getElementById("currentPage").innerHTML = xView+1;
+
+    cachedImage.src = "/public/uploads/"+comicFolder+"/"+comicImages[(xView+1)%comicImagesLength];
+    fetch("/ajax/lastpage/update/"+comicId+"/"+xView);
 }
+closeInfoComic.addEventListener("click",()=>{
+    TriggerLeftorRight();
+})
 
-mainImage.addEventListener("mouseup",(event_t)=>{
-
-    if(event_t.button == 0){
-        rightTriggerArrow(event_t);
-    }
-    if(event_t.button == 2){
-        leftTriggerArrow(event_t);
-    }
-
+mainImage.addEventListener("mousedown",(event_t)=>{
+        if(event_t.button == 0){
+            rightTriggerArrow(event_t);
+        }
+        if(event_t.button == 2){
+            leftTriggerArrow(event_t);
+        }
 })
 
 document.getElementById("rightTrigger").addEventListener("mousedown",(event_t)=>{
@@ -59,6 +78,9 @@ document.addEventListener("keydown",(event_t)=>{
     if(event_t.key == "ArrowLeft"){
         leftTriggerArrow(event_t);
     }
+    if(event_t.key == "r" && backToStart.style.display == ""){
+        backToStartFun();
+    }
 })
 
 document.getElementById("infoComic_details").addEventListener("mousedown",()=>{
@@ -66,3 +88,8 @@ document.getElementById("infoComic_details").addEventListener("mousedown",()=>{
     document.getElementById("rightTrigger").style.visibility = "hidden";
     document.getElementById("leftTrigger").style.visibility = "hidden";
 });
+
+
+document.getElementById("backToComics").addEventListener("click",()=>{
+    window.location.href = "/comic";
+})

@@ -4,8 +4,12 @@
 var loadmoreElement = document.getElementById("loadMore");
 var BodyComic = document.getElementById("bodyComic");
 var offset = 12;
+var inQuery = 0;
 function LoadMorefun(){
-    fetch("comic/ajax/"+offset).then(response => response.json())
+    if(inQuery == 1) return;
+    inQuery = 1;
+    // http://localhost:8082/ajax/comic/1
+    fetch("/ajax/comic/"+offset,{}).then(response => response.json())
     .then(data_array => {
         data_array.forEach((data)=>{
         BodyComic.insertAdjacentHTML("beforeend", `
@@ -20,25 +24,24 @@ function LoadMorefun(){
             </a>
           `);
         })
-        if(data_array.length == 0){
-            loadmoreElement.remove();
+        if(data_array.length != 0){
+            inQuery = 0
         }
     });
     offset = offset + 12 // ose offset += 12
 }
-loadmoreElement.addEventListener("click",LoadMorefun)
+
 
 var isInViewport = function (elem,toleranc = 0) {
+    if(elem){
     var bounding = elem.getBoundingClientRect();
-    return (
-bounding.top >= 0 &&
-bounding.bottom-toleranc <= (window.innerHeight || document.documentElement.clientHeight)
-    );
+    isinView = (bounding.top >= 0 && bounding.bottom-toleranc <= (window.innerHeight || document.documentElement.clientHeight));
+    return isinView;
+    }
 };
 
 document.addEventListener("scroll",()=>{
-    console.log("sctrolled")
-    if(isInViewport(loadmoreElement,400)){
+    if(isInViewport(loadmoreElement,200)){
         LoadMorefun();
     }
 })

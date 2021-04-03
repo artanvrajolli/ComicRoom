@@ -14,22 +14,23 @@ router.use((req,res,next)=>{
 
 router.get("/",(req,res)=>{
     //placeholder for register
-    res.render("v_register",{ msg:req.session.msg , username:"admin" , email:"admin@admin.com" ,password:"admin123213" });
+    res.render("v_register",{ 
+        msg:req.session.msg , 
+        username:"" , 
+        email:"" ,
+        password:"" });
     req.session.msg = "";
 })
 router.post("/",CheckerBody,(req,res)=>{
 
    Users_table.create({
-       username: req.body.username,
-       email:req.body.email,
+       username:req.body.username,
+       email:   req.body.email,
        password: bcrypt.hashSync(req.body.password,10)
    }).then((data)=>{
-       req.session.userdata = data;
-       res.send(req.session.userdata)
-   }).catch((err)=>{
-       res.send(err)
+        req.session.userdata = data;
+        res.redirect("/comic");
    })
-
 })
 
 

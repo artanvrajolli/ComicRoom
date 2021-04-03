@@ -3,7 +3,7 @@
     <div class="container content_c mt-2">
       <div id="bodyComic" class="row">
         <!-- my-auto align-middle -->
-        <% comics.forEach(comic=>{ %>
+        <% var x = 0; comics.forEach(comic=>{  x++; %>
 
           <a style="text-decoration: none;" class="col-md-3" href="comic/show/<%-comic.id%>">
 
@@ -14,8 +14,10 @@
             </div>
             <p class="text-justify text-white" style="overflow:hidden;"><%=comic.title%></p>
           </a>
-
-        <% }) %>
+           <!-- <% if(x % 4 == 0){%>
+            <hr>
+            <% }%> -->
+        <%  }) %>
       </div>
       <div class="row" style="visibility: hidden;">
         <div>

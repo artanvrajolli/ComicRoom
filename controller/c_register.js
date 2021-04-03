@@ -14,7 +14,7 @@ async function CheckerBody(req,res,next){
     }
     await Users_table.findOne({
         where:{
-        username: req.body.username
+            username: req.body.username
         }
     }).then(row => {
         if(row != null){
@@ -39,8 +39,10 @@ async function CheckerBody(req,res,next){
         msg.push("Invalid Email given");
         fail = true;
     }
-
-    if(req.body.password.length < 6){
+    if(req.body.password == ""){
+        msg.push("Password cannot be empty");
+        fail = true;
+    }else if(req.body.password.length < 6){
         msg.push("Password length is less than 6 must be more");
         fail = true;
     }

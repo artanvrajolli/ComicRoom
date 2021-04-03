@@ -6,6 +6,8 @@ const db = require('./config/database');
 const mainRouter = require('./routers/mainRouter')
 const fs = require('fs');
 
+const lastPage = require('./model/m_lastPage')
+
 // session handler
 app.use(session({
     secret:"ComicRoom_lambda",

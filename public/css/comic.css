@@ -1,7 +1,7 @@
 .coverImage:hover{
-  -ms-transform: scale(1.05); /* IE 9 */
-  -webkit-transform: scale(1.05); /* Safari 3-8 */
-  transform: scale(1.05); 
+  -ms-transform: scale(1.01); /* IE 9 */
+  -webkit-transform: scale(1.01); /* Safari 3-8 */
+  transform: scale(1.01); 
 }
 
 .content_c{
@@ -50,13 +50,4 @@ i:hover{
   -webkit-transform: scale(1.05); /* Safari 3-8 */
   transform: scale(1.05); 
   color:white;
-}
-#backToComic{
-  z-index:2;
-  position: absolute;
-  font-size:30px;
-  opacity: 0.2;
-  left:5px;
-  top:0;
-  cursor: pointer;
 }

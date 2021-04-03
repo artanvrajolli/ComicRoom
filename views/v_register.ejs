@@ -1,13 +1,21 @@
 <%- include("header") %>
 <div class="container content_c d-flex mt-5 justify-content-center">
     <div>
-        <%=msg%>
+        <div class="row">
+            <% if(msg != "" && typeof msg != 'undefined'){ %>
+                <div class="alert alert-warning"><%=msg%></div>
+            <% } %>
+        </div>
+        <div class="row">
+        <div class="col-12 d-flex justify-content-center">
+            <form method="post"  action="/register">
+                <input style="height: 30px;margin-bottom: 10px;" class="form-control" name="username" value="<%=username%>" placeholder="username" type="text">
+                <input style="height: 30px;margin-bottom: 10px;" class="form-control" name="email" value="<%=email%>" placeholder="email" type="text">
+                <input style="height: 30px;margin-bottom: 10px;" class="form-control" name="password" value="<%=password%>" placeholder="Password" type="password">
+                <button class="btn btn-warning">Sign up</button>
+            </form>
+        </div>
     </div>
-    <form method="post">
-        <input class="form-control" name="username" value="<%=username%>" placeholder="username" type="text"><br>
-        <input class="form-control" name="email" value="<%=email%>" placeholder="email" type="text"><br>
-        <input class="form-control" name="password" value="<%=password%>" placeholder="Password" type="password"><br>
-        <button class="btn btn-secondary">Register</button><br>
-    </form>
+</div>
 </div>
 <%- include("footer") %>

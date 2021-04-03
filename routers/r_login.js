@@ -1,7 +1,8 @@
 const Users_table = require('../model/m_users');
-const Op = require('sequelize').Op
+const Op = require('sequelize').Op;
 const router = require('express').Router();
 const bcrypt = require('bcrypt');
+const {loginPost} = require('../controller/c_login');
 
 router.use((req,res,next)=>{
     // don't show login form if is already login
@@ -21,25 +22,7 @@ router.get("/",(req,res)=>{
     req.session.msg = "";
 })
 
-router.post("/",(req,res)=>{
-    var msg = []
-    Users_table.findOne({
-        where:{
-            username: req.body.username,
-        }
-    }).then((data)=>{
-        if(data != null){
-            req.session.userData = data;
-           res.redirect("/comic")
-        }else{
-            req.session.msg = "You found nothing, Goodnight sir";
-            res.redirect("/login");
-        }
-    }).catch((err)=>{
-        res.send(err);
-    })
-    //res.send(req.body)
-})
+router.post("/",loginPost)
 
 
 
