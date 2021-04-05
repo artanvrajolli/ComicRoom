@@ -5,9 +5,6 @@ const app = express();
 const db = require('./config/database');
 const mainRouter = require('./routers/mainRouter')
 const fs = require('fs');
-
-const lastPage = require('./model/m_lastPage')
-
 // session handler
 app.use(session({
     secret:"ComicRoom_lambda",
@@ -26,6 +23,7 @@ app.use(fileUpload({
 // set view engine to use .ejs files
 app.set('view engine','ejs');
 
+// body parser
 app.use(express.urlencoded({ extended: true}))
 app.use(express.json())
 
@@ -37,6 +35,15 @@ app.use("/public",express.static(__dirname+"/public"));
 app.use('/',mainRouter)
 
 
+// begin testing zone
+
+app.get("/test",(req,res)=>{
+
+
+
+})
+
+// end testing zone
 
 
 

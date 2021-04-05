@@ -7,13 +7,13 @@ const bcrypt = require("bcrypt")
 router.use((req,res,next)=>{
     if(req.session.userdata != null){
         res.redirect("/comic");
+        req.session.msg = ""
     }else{
         next();
     }
 })
 
 router.get("/",(req,res)=>{
-    //placeholder for register
     res.render("v_register",{ 
         msg:req.session.msg , 
         username:"" , 
@@ -28,8 +28,9 @@ router.post("/",CheckerBody,(req,res)=>{
        email:   req.body.email,
        password: bcrypt.hashSync(req.body.password,10)
    }).then((data)=>{
-        req.session.userdata = data;
+        req.session.userData = data;
         res.redirect("/comic");
+        req.session.msg = "";
    })
 })
 

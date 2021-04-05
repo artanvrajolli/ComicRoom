@@ -2,7 +2,7 @@ const Op = require('sequelize').Op
 const Users_table = require('../model/m_users')
 
 const loginPost = (req,res)=>{
-    var msg = []
+
     Users_table.findOne({
         where:{
             [Op.or]:{
@@ -13,7 +13,8 @@ const loginPost = (req,res)=>{
     }).then((data)=>{
         if(data != null){
             req.session.userData = data;
-           res.redirect("/comic")
+            res.redirect("/comic");
+            req.session.msg = "";
         }else{
             req.session.msg = "Check username or password!";
             res.redirect("/login");

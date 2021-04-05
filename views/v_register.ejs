@@ -2,20 +2,36 @@
 <div class="container content_c d-flex mt-5 justify-content-center">
     <div>
         <div class="row">
-            <% if(msg != "" && typeof msg != 'undefined'){ %>
+            <% if(typeof msg != 'undefined' && msg != ""){ %>
                 <div class="alert alert-warning"><%=msg%></div>
             <% } %>
         </div>
         <div class="row">
         <div class="col-12 d-flex justify-content-center">
             <form method="post"  action="/register">
-                <input style="height: 30px;margin-bottom: 10px;" class="form-control" name="username" value="<%=username%>" placeholder="username" type="text">
-                <input style="height: 30px;margin-bottom: 10px;" class="form-control" name="email" value="<%=email%>" placeholder="email" type="text">
-                <input style="height: 30px;margin-bottom: 10px;" class="form-control" name="password" value="<%=password%>" placeholder="Password" type="password">
-                <button class="btn btn-warning">Sign up</button>
+                <input style="height: 30px;margin-bottom: 10px;" class="form-control" name="username" value="<%=username%>" placeholder="Username" type="text">
+                <input style="height: 30px;margin-bottom: 10px;" class="form-control" name="email" value="<%=email%>" placeholder="Email" type="text">
+                <input id="original_password" style="height: 30px;margin-bottom: 10px;" class="form-control" name="password" value="" placeholder="Password" type="password">
+                <input id="confirm_password" style="height: 30px;margin-bottom: 10px;" class="form-control" value="" placeholder="Confirm Password" type="password">
+                <button id="signupButton" class="btn btn-warning">Sign up</button>
             </form>
         </div>
     </div>
 </div>
 </div>
+<script>
+    var original_password = document.getElementById("original_password");
+    var confirm_password = document.getElementById("confirm_password");
+
+    confirm_password.addEventListener("keyup",()=>{
+        if(original_password.value == confirm_password.value){
+            confirm_password.style.border = "1px solid green";
+            signupButton.disabled = false;
+        }else{
+            confirm_password.style.border = "1px solid red";
+            signupButton.disabled = true;
+        }
+    })
+
+</script>
 <%- include("footer") %>

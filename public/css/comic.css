@@ -12,6 +12,7 @@ a{
   text-decoration: none;
 }
 
+
 #infoComic{
   background-color: rgba(0, 0, 0, 0.5);
   position: fixed;
@@ -45,7 +46,7 @@ a{
   opacity: 0.1;
 }
 
-i:hover{
+a i:hover{
   -ms-transform: scale(1.05); /* IE 9 */
   -webkit-transform: scale(1.05); /* Safari 3-8 */
   transform: scale(1.05); 

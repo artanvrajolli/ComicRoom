@@ -93,3 +93,18 @@ document.getElementById("infoComic_details").addEventListener("mousedown",()=>{
 document.getElementById("backToComics").addEventListener("click",()=>{
     window.location.href = "/comic";
 })
+var fullScreen_icon = document.getElementById("fullScreen_icon");
+fullScreen_icon.addEventListener("click",()=>{
+    toggleFullScreen();
+})
+function toggleFullScreen() {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen();
+        fullScreen_icon.innerHTML = `<i class="mx-2 fas fa-compress"></i>`;
+    } else {
+      if (document.exitFullscreen) {
+        fullScreen_icon.innerHTML = `<i class="mx-2 fas fa-expand"></i>`;
+        document.exitFullscreen();
+      }
+    }
+  }

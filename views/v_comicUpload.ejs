@@ -48,9 +48,16 @@
   <div class="container content_c mt-3">
         <div class="d-flex align-items-sm-center justify-content-center row col-12 align-middle">
 
-                <div class="justify-content-center">
-                    <%=msg%>
+
+
+
+                <div class="d-flex justify-content-center">
+                    <% if(typeof msg != 'undefined' && msg != ""){ %>
+                    <div class="col-md-6 alert alert-warning"><%=msg%></div>
+                    <%}%>
+
                 </div>
+
                 <div class="col-9">
                     <form method="post" enctype="multipart/form-data">   
                         <div>

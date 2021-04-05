@@ -2,6 +2,7 @@ const fs = require('fs')
 const extractComics = require('../utils/extractComic')
 const comic_table = require('../model/m_comic')
 const Op = require('sequelize').Op;
+const lastPage_table = require('../model/m_lastPage');
 
 const PostComicUpload = (req,res)=>{
     if(typeof req.files.fileComicUpload == 'undefined' || req.files.fileComicUpload == null){
@@ -21,7 +22,7 @@ const PostComicUpload = (req,res)=>{
     }
     var extension = req.files.fileComicUpload.name.split(".").pop();
     if(!["cbz","cbr"].includes(extension)){
-        req.session.msg = "extension should be .cbz or .cbr";
+        req.session.msg = "Extension should be .cbz or .cbr";
         res.redirect("/comic/upload")
         return;
     }
@@ -35,6 +36,7 @@ const PostComicUpload = (req,res)=>{
         uid: req.session.userData.id
     }).then((data)=>{
         res.redirect("/comic/"+comicFolder_Id+"/"+data.id)
+        req.session.msg = "";
     }).catch((err)=>{
         console.log(err);
     })
@@ -98,24 +100,31 @@ const UpdateComicDetails =async (req,res)=>{
 }
 
 
-const showcomic_id = (req,res)=>{
+const showcomic_id = async (req,res)=>{
     var comic_id = req.params.id;
+
     comic_table.findOne({
         where:{
             id:comic_id
         }
-    }).then((data)=>{
+    }).then(async (data)=>{
         var images_file = fs.readdirSync(process.cwd()+"/public/uploads/"+data.savedFolder).filter(item => {
         const regex = /(?:APNG|AVIF|GIF|JPEG|PNG|SVG|WebP|JPG)$/i;
         return item.match(regex) == null ? false : true;
-        }).map((item)=> "\'"+item+"\'");
-        res.render("comicView",{ userData:req.session.userData , comicImages:images_file , savedFolder:data.savedFolder,comicTitle:data.title,comic_Field:data })
+        }).map((item)=> "\'"+escape(item)+"\'");
+        if(typeof req.session.userData != 'undefined'){
+            var pageNumber = await fetchPage(comic_id,req.session.userData.id);
+        }else{
+            var pageNumber = 0;
+        }
+        res.render("comicView",{ userData:req.session.userData , comicImages:images_file , savedFolder:data.savedFolder,comicTitle:data.title,comic_Field:data,pageNumber: pageNumber})
     }).catch((err)=>{
         console.log(err);
     })
 }
 
-const showgallery_comic = (req,res)=>{
+const showgallery_comic = async (req,res)=>{
+    var searchKeywords = req.query.keyword || "";
     comic_table.findAll({
         attributes:["id","title","coverImage","description","totalPages","savedFolder"],
         where:{
@@ -124,6 +133,11 @@ const showgallery_comic = (req,res)=>{
                     title:null,
                     coverImage: ""
                 }
+            },
+            [Op.or]:{
+                title: {[Op.like]: '%'+searchKeywords+'%'},
+                description:{[Op.like]: '%'+searchKeywords+'%'},
+                author:{[Op.like]: '%'+searchKeywords+'%'},
             }
             
         },
@@ -132,9 +146,26 @@ const showgallery_comic = (req,res)=>{
         ],
         limit:12
     }).then((data)=>{
-        res.render("v_comicGallery",{ comics:data, userData: req.session.userData })
+        res.render("v_comicGallery",{ comics:data, userData: req.session.userData , searchKeywords:searchKeywords })
     }).catch((err)=>{
         res.send(err);
     })
 }
+
+const fetchPage = async (id_comic,userId)=>{
+    if(typeof userId == 'undefined'){
+        return 0;
+    }
+    var data = await lastPage_table.findOne({
+        where:{
+            comicId: id_comic,
+            userId: userId
+        }
+    })
+    if(!data){
+        return 0;
+    }
+    return data.pageNumber;
+}
+
 module.exports = {  PostComicUpload , findMainFolderImages , UpdateComicDetails,showcomic_id ,showgallery_comic}

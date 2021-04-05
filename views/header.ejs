@@ -8,14 +8,27 @@
   <!-- begin header -->
   <header style="background-color: #212121;border-bottom: 2px solid #353535;" class="p-3 text-white">
     <div class="container">
-      <div class="d-flex flex-wrap align-items-center justify-content-center justify-content-lg-start">  
+      <div class="d-flex flex-wrap align-items-center justify-content-center justify-content-lg-start mx-5">  
         <ul class=" nav col-12 col-lg-auto me-lg-auto mb-2 justify-content-center mb-md-0">
-          <li><a href="/comic" class="nav-link px-2 text-secondary">Comic</a></li>
+          <li><a href="/comic" class="nav-link px-2 text-secondary"><i class="fas fa-globe"></i> Gallery</a></li>
+          <li style="cursor: pointer;<% if(typeof searchKeywords != "undefined" && searchKeywords != ""){%>display: none;<%}%>" id="searchButton" class="nav-link px-2 text-secondary"><i class="fas fa-search"></i> Search</li>
+          <li>
+
+            <div id="formSearch" style="margin-top: 2px;<% if(typeof searchKeywords == "undefined" || searchKeywords == ""){%>display: none; <%}%>" class="form-group has-feedback">
+              <form class="input-group" method="GET" action="/comic">
+                <span onclick="document.getElementById('submit_search').click();" class="input-group-addon" style="border:1px solid white;background-color:  #212529;border-radius: 7px 0 0 7px;padding-top: 2px;"><span style="font-size: 27px;padding:4px;color: #636464;" class="fas fa-search"></span></span>
+
+                <input name="keyword" id="searchInput" value="<% if(typeof searchKeywords != "undefined"){%><%=searchKeywords%><%}%>" type="text" class="form-control"  placeholder="Search..." style="border-left: 0px;  color:white;  background-color: #212529;">
+              
+                <button id="submit_search" style="display: none;">Hidden Button</button>
+              </form>
+            </div>
+          </li>
         </ul>
           <% if(typeof userData == 'undefined'){%>
             <div class="text-end">
-              <a href="/login">
-              <button type="button" class="btn btn-outline-light me-2"><i aria-hidden="true" class="pt-1 fas fa-sign-in-alt"></i> Login</button>
+              <a class="text-white me-2" href="/login">
+                <i aria-hidden="true" class="pt-1 fas fa-sign-in-alt"></i> Login
               </a>
               <a  href="/register">
               <button type="button" class="btn btn-warning"><i class="pt-1 fas fa-user-plus"></i> Sign-up</button>
