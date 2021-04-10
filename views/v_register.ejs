@@ -22,8 +22,7 @@
 <script>
     var original_password = document.getElementById("original_password");
     var confirm_password = document.getElementById("confirm_password");
-
-    confirm_password.addEventListener("keyup",()=>{
+    const checker_confirm = ()=>{
         if(original_password.value == confirm_password.value){
             confirm_password.style.border = "1px solid green";
             signupButton.disabled = false;
@@ -31,7 +30,11 @@
             confirm_password.style.border = "1px solid red";
             signupButton.disabled = true;
         }
-    })
+    }
+    confirm_password.addEventListener("keyup",checker_confirm);
+    original_password.addEventListener("keyup",checker_confirm);
+
+
 
 </script>
 <%- include("footer") %>

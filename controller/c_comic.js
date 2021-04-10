@@ -4,6 +4,16 @@ const comic_table = require('../model/m_comic')
 const Op = require('sequelize').Op;
 const lastPage_table = require('../model/m_lastPage');
 
+
+function checkIfisOnline(req,res,next){
+    if(typeof req.session.userData == 'undefined'){
+        req.session.msg = "To Upload your comic you need to be logged-in"
+        res.redirect("/login");
+        return;
+    }
+    next();
+}
+
 const PostComicUpload = (req,res)=>{
     if(typeof req.files.fileComicUpload == 'undefined' || req.files.fileComicUpload == null){
         req.session.msg = "Empty file given!";
@@ -69,12 +79,17 @@ const UpdateComicDetails =async (req,res)=>{
 
     var comic_folder_id = req.params.folderID;
     var comic_id = req.params.id_db;
+    if(typeof req.body.title == 'undefined' && req.body.title == ""){
+        req.session.msg = "Empty Title is not allowed!"
+        res.redirect("/comic/"+comic_folder_id+"/"+comic_id);
+        return;
+    }
 
     MainFolderCheck = findMainFolderImages("/public/uploads/"+comic_folder_id);
     
     if(MainFolderCheck.match(/(?:APNG|AVIF|GIF|JPEG|PNG|SVG|WebP|JPG)$/i) == null){
         comic_folder_id = MainFolderCheck;
-        console.log(MainFolderCheck)
+        
     }
     
     var part_file = fs.readdirSync(process.cwd()+"/public/uploads/"+comic_folder_id).filter(item => {
@@ -168,4 +183,4 @@ const fetchPage = async (id_comic,userId)=>{
     return data.pageNumber;
 }
 
-module.exports = {  PostComicUpload , findMainFolderImages , UpdateComicDetails,showcomic_id ,showgallery_comic}
+module.exports = {  PostComicUpload , findMainFolderImages , UpdateComicDetails,showcomic_id ,showgallery_comic,checkIfisOnline}

@@ -1,15 +1,14 @@
   <%-include("header")%>
-    <div class="container content_c mt-2">
+    <div id="content_body" class="container content_c mt-2">
       <div id="bodyComic" class="row justify-content-center">
-        <% var x = 0; comics.forEach(comic=>{  x++; %>
+        <% comics.forEach(comic=>{ %>
 
           <a style="text-decoration: none;" class="col-md-3" href="comic/show/<%-comic.id%>">
 
-            <div class="d-flex align-items-center" style="height: 300px;  border-radius: 2.5%;  /*background-color: #3a3a3a;
-            border-radius: 7px;*/"> 
+            <div class="d-flex align-items-center" style="height: 300px;  border-radius: 2.5%;"> 
               <img style="max-height: 100%;max-width: 100%;" src="public\uploads\<%=comic.savedFolder%>\<%=comic.coverImage%>" class="mx-auto d-block coverImage" alt="<%=comic.title%>">
-              
             </div>
+
             <p class="text-justify text-white" style="overflow:hidden;"><%=comic.title%></p>
           </a>
         <%  }) %>

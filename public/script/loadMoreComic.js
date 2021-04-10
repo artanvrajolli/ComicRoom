@@ -8,6 +8,11 @@ var inQuery = 0;
 function LoadMorefun(){
     if(inQuery == 1) return;
     inQuery = 1;
+    if(!document.getElementById("loading_text")){
+        document.getElementById("content_body").insertAdjacentHTML("beforeend",`
+        <center id="loading_text">Loading...</center>
+        `)
+    }
     // http://localhost:8082/ajax/comic/1
     fetch("/ajax/comic/"+offset,{
         method:"put"
@@ -27,6 +32,9 @@ function LoadMorefun(){
         })
         if(data_array.length != 0){
             inQuery = 0
+        }
+        if(document.getElementById("loading_text")){
+            document.getElementById("loading_text").remove();
         }
     });
     offset = offset + 12 // ose offset += 12

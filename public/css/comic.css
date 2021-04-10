@@ -51,4 +51,5 @@ a i:hover{
   -webkit-transform: scale(1.05); /* Safari 3-8 */
   transform: scale(1.05); 
   color:white;
+  opacity: 1;
 }

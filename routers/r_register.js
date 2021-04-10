@@ -14,12 +14,13 @@ router.use((req,res,next)=>{
 })
 
 router.get("/",(req,res)=>{
+    msg = req.session.msg;
+    req.session.msg = "";
     res.render("v_register",{ 
-        msg:req.session.msg , 
+        msg, 
         username:"" , 
         email:"" ,
         password:"" });
-    req.session.msg = "";
 })
 router.post("/",CheckerBody,(req,res)=>{
 

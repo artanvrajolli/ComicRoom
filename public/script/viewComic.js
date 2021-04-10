@@ -45,10 +45,15 @@ function TriggerLeftorRight(){
     document.getElementById("rightTrigger").style.visibility = "visible";
     document.getElementById("leftTrigger").style.visibility = "visible";
     document.getElementById("currentPage").innerHTML = xView+1;
-
+}
+ // onloadedmetadata="cacheNextImage()"
+function cacheNextImage(){
+    setTimeout(()=>{
     cachedImage.src = "/public/uploads/"+comicFolder+"/"+comicImages[(xView+1)%comicImagesLength];
     fetch("/ajax/lastpage/update/"+comicId+"/"+xView);
+    },500)
 }
+
 closeInfoComic.addEventListener("click",()=>{
     TriggerLeftorRight();
 })
@@ -80,6 +85,9 @@ document.addEventListener("keydown",(event_t)=>{
     }
     if(event_t.key == "r" && backToStart.style.display == ""){
         backToStartFun();
+    }
+    if(event_t.key == "f"){
+        toggleFullScreen();
     }
 })
 
