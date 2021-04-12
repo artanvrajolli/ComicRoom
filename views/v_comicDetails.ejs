@@ -1,16 +1,25 @@
 <%- include("header") %>
-<div class="container content_c d-flex justify-content-center">
+<div class="container content_c mt-5 justify-content-center">
+        <div class="d-flex justify-content-center">
+            <% if(typeof msg != 'undefined' && msg != ""){ %>
+                <div class="alert alert-warning"><%=msg%></div>
+            <% } %>
+        </div>
+    <div class="row col-12">
+        <div class="col-12 d-flex justify-content-center">
     <form method="post" class="mt-4 col-md-5">
         <input class="mt-2 form-control" type="text" name="title" placeholder="title">
 
             <input  class="mt-2 form-control" type="text" name="author" id="authortext" placeholder="author">
 
         <div class="mt-2 form-floating">
-            <textarea name="description" class="form-control" placeholder="Leave a comment here" id="floatingTextarea2" style="height: 100px"></textarea>
-            <label style="background-color: black;" class="text-dark" for="floatingTextarea2">Description</label>
+            <textarea name="description" class="form-control" placeholder="" id="floatingTextarea2" "></textarea>
+            <label  class="text-dark" for="floatingTextarea2">Description</label>
         </div>
 
         <input class="mt-2 btn btn-secondary" type="submit" value="Finish" name="submit">
     </form>
+</div>
+</div>
 </div>
 <%- include("footer") %>

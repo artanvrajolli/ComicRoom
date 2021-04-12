@@ -8,28 +8,38 @@ async function extractComics(filename,extension,pathOutput = ""){
     fs.mkdirSync(process.cwd()+'/public/uploads/'+pathOutput)
   }catch(err){}
     if(extension == "cbz"){
-        // cbz -> zip -> image
-        fs.createReadStream(filename).pipe(unzip.Extract({ 
-          path: process.cwd()+'/public/uploads/'+pathOutput
-         }));
-        return 'unZIP mode'
+         return new Promise((resolve, reject) => {
+          const file = fs.createReadStream(filename).pipe(unzip.Extract({ 
+            path: process.cwd()+'/public/uploads/'+pathOutput
+           }));
+          file.on("finish", () => { resolve(true); }); 
+          file.on("error", reject);
+        });
     }else{
         // cbr -> rar -> image
+        return new Promise((resolve, reject) => {
         const src = filename;
         const dest = process.cwd()+'/public/uploads/'+pathOutput;
-
         const command = 'e';
         const switches = ['-o+', '-idcd'];
 
-        await unrar.uncompress({
-          src,
-          dest,
-          command,
-          switches,
-        });
-
+        (async () => {
+          unrar.on('progress', percent => {
+            if(percent == "100%"){
+              resolve(true);
+            }
+          });
+         
+          await unrar.uncompress({
+            src,
+            dest,
+            command,
+            switches,
+          });
+        })().catch(console.error);
 
         return 'unRAR mode'
+      });
     }
 }
 

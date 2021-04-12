@@ -5,6 +5,8 @@ const app = express();
 const db = require('./config/database');
 const mainRouter = require('./routers/mainRouter')
 const fs = require('fs');
+const comic_table = require('./model/m_comic');
+const Op = require('sequelize').Op;
 // session handler
 app.use(session({
     secret:"ComicRoom_lambda",
@@ -75,5 +77,30 @@ fs.readdir("public/tmp", (err, files) => {
         if (err) throw err;
       });
     }
+    fs.mkdir("public/uploads",(err)=>{}); // create file uploads to allow upload comics
+    console.log("tmp folder is clean")
   });
+
+// var files_scan = fs.readdirSync("public/uploads");
+// var x = 0;
+// comic_table.findAll({ 
+//     attributes: ["savedFolder",'coverImage','title'],
+//     where:{
+//       [Op.not]:{
+//           title:{
+//               [Op.or]:[null,""]
+//           }
+//       }
+//     }
+// }).then((data)=>{
+//     data.forEach(row => {
+//         if(!files_scan.includes(row.savedFolder) && row.savedFolder != "" && row.savedFolder != "."){
+//             fs.rmdirSync("public/uploads/"+row.savedFolder, { recursive: true });
+//             x++;
+//         }
+//     });
+//     console.log(x);
+    
+//});
+  //fs.rmdirSync(dir, { recursive: true });
 

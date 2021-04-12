@@ -3,6 +3,7 @@ const extractComics = require('../utils/extractComic')
 const comic_table = require('../model/m_comic')
 const Op = require('sequelize').Op;
 const lastPage_table = require('../model/m_lastPage');
+const crypto = require('crypto');
 
 
 function checkIfisOnline(req,res,next){
@@ -14,7 +15,7 @@ function checkIfisOnline(req,res,next){
     next();
 }
 
-const PostComicUpload = (req,res)=>{
+const PostComicUpload = async (req,res)=>{
     if(typeof req.files.fileComicUpload == 'undefined' || req.files.fileComicUpload == null){
         req.session.msg = "Empty file given!";
         res.redirect("/comic/upload")
@@ -40,7 +41,7 @@ const PostComicUpload = (req,res)=>{
         fs.renameSync(req.files.fileComicUpload.tempFilePath,req.files.fileComicUpload.tempFilePath+".rar")
     }
     var comicFolder_Id = "comic_"+new Date().getTime();
-    extractComics(req.files.fileComicUpload.tempFilePath,extension,comicFolder_Id);
+    console.log(await extractComics(req.files.fileComicUpload.tempFilePath,extension,comicFolder_Id))
     comic_table.create({
         savedFolder: comicFolder_Id,
         uid: req.session.userData.id
@@ -74,13 +75,22 @@ function findMainFolderImages(fileOrDir){
     return "";
     
 }
-
+const getUpdateComicDetails = (req,res)=>{
+    req.session.myComic = crypto.createHash('md5').update(req.params.folderID+"|"+req.params.id_db).digest("hex");
+    var msg = req.session.msg;
+    req.session.msg = "";
+    res.render("v_comicDetails",{  userData: req.session.userData,msg});
+}
 const UpdateComicDetails =async (req,res)=>{
-
     var comic_folder_id = req.params.folderID;
     var comic_id = req.params.id_db;
-    if(typeof req.body.title == 'undefined' && req.body.title == ""){
-        req.session.msg = "Empty Title is not allowed!"
+    if(typeof req.body.title == 'undefined' || req.body.title == ""){
+        req.session.msg = "Empty title has been given!"
+        res.redirect("/comic/"+comic_folder_id+"/"+comic_id);
+        return;
+    }
+    if(req.session.myComic != crypto.createHash('md5').update(comic_folder_id+"|"+comic_id).digest("hex")){
+        req.session.msg = "Incorrect user Comic!"
         res.redirect("/comic/"+comic_folder_id+"/"+comic_id);
         return;
     }
@@ -97,6 +107,7 @@ const UpdateComicDetails =async (req,res)=>{
     return item.match(regex) == null ? false : true;
     });
     // fs.lstatSync(part_file[0]).isDirectory() 
+
     await comic_table.update({
         coverImage: part_file[0],
         totalPages: part_file.length,
@@ -106,8 +117,8 @@ const UpdateComicDetails =async (req,res)=>{
         savedFolder:comic_folder_id
      }, {
      where: {
-         //savedFolder: comic_folder_id
-         id:comic_id
+         id:comic_id,
+         uid: req.session.userData.id
      }
      });
 
@@ -183,4 +194,4 @@ const fetchPage = async (id_comic,userId)=>{
     return data.pageNumber;
 }
 
-module.exports = {  PostComicUpload , findMainFolderImages , UpdateComicDetails,showcomic_id ,showgallery_comic,checkIfisOnline}
+module.exports = {  PostComicUpload , findMainFolderImages , UpdateComicDetails,showcomic_id ,showgallery_comic,checkIfisOnline,getUpdateComicDetails}
