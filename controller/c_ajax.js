@@ -6,10 +6,10 @@ async function updateOrCreate (req) {
     var numerLastPages = req.params.pageNumber
     var userId_input =  req.session.userData.id;
     var comic_input = req.params.comicId;
-   const foundItem = await lastPage_table.findOne({where:{
-        comicId: comic_input,
-        userId: userId_input
-   }});
+    const foundItem = await lastPage_table.findOne({where:{
+            comicId: comic_input,
+            userId: userId_input
+    }});
     if (!foundItem) {
         const item = await lastPage_table.create({
             comicId: comic_input,

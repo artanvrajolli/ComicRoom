@@ -22,14 +22,12 @@ async function extractComics(filename,extension,pathOutput = ""){
         const dest = process.cwd()+'/public/uploads/'+pathOutput;
         const command = 'e';
         const switches = ['-o+', '-idcd'];
-
         (async () => {
           unrar.on('progress', percent => {
             if(percent == "100%"){
               resolve(true);
             }
-          });
-         
+          });         
           await unrar.uncompress({
             src,
             dest,
