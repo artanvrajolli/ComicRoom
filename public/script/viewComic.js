@@ -46,11 +46,15 @@ function TriggerLeftorRight(){
     document.getElementById("leftTrigger").style.visibility = "visible";
     document.getElementById("currentPage").innerHTML = xView+1;
 }
- // onloadedmetadata="cacheNextImage()"
+ // onloadedmetadata="cacheNextImage()" onload="cacheNextImage()"
+var lltimer = setTimeout(()=>{},1000)
 function cacheNextImage(){
-    setTimeout(()=>{
+    clearTimeout(lltimer);
+    lltimer = setTimeout(()=>{
     cachedImage.src = "/public/uploads/"+comicFolder+"/"+comicImages[(xView+1)%comicImagesLength];
-    fetch("/ajax/lastpage/update/"+comicId+"/"+xView);
+    fetch("/ajax/lastpage/update/"+comicId+"/"+xView,{
+        method:"put"
+    });
     },500)
 }
 

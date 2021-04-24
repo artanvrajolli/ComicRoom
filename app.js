@@ -5,8 +5,7 @@ const app = express();
 const db = require('./config/database');
 const mainRouter = require('./routers/mainRouter')
 const fs = require('fs');
-const comic_table = require('./model/m_comic');
-const Op = require('sequelize').Op;
+
 // session handler
 app.use(session({
     secret:"ComicRoom_lambda",
@@ -37,22 +36,15 @@ app.use("/public",express.static(__dirname+"/public"));
 app.use('/',mainRouter)
 
 
-// begin testing zone
-
-app.get("/test",(req,res)=>{
-
-
-
-})
-
-// end testing zone
-
-
-
+// 404 error handler
 app.use((req,res)=>{
-    // placeHolder for 404 error
     res.status(404);
-    res.send("404 error");
+    var msg = req.session.msg;
+    req.session.msg = "";
+    res.render("v_404",{ 
+        msg, 
+        userData: req.session.userData 
+    });
 })
 
 // check if db is ready / authenticate
@@ -80,27 +72,4 @@ fs.readdir("public/tmp", (err, files) => {
     fs.mkdir("public/uploads",(err)=>{}); // create file uploads to allow upload comics
     console.log("tmp folder is clean")
   });
-
-// var files_scan = fs.readdirSync("public/uploads");
-// var x = 0;
-// comic_table.findAll({ 
-//     attributes: ["savedFolder",'coverImage','title'],
-//     where:{
-//       [Op.not]:{
-//           title:{
-//               [Op.or]:[null,""]
-//           }
-//       }
-//     }
-// }).then((data)=>{
-//     data.forEach(row => {
-//         if(!files_scan.includes(row.savedFolder) && row.savedFolder != "" && row.savedFolder != "."){
-//             fs.rmdirSync("public/uploads/"+row.savedFolder, { recursive: true });
-//             x++;
-//         }
-//     });
-//     console.log(x);
-    
-//});
-  //fs.rmdirSync(dir, { recursive: true });
 

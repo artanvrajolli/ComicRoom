@@ -2,12 +2,10 @@
 const router = require('express').Router();
 const {PostComicUpload ,UpdateComicDetails ,showcomic_id,showgallery_comic, checkIfisOnline, getUpdateComicDetails} = require('../controller/c_comic')
 
-
+//Show gallery
 router.get("/",showgallery_comic)
-
+//Show comic Page
 router.get("/show/:id",showcomic_id)
-
-
 
 router.get("/upload",checkIfisOnline,(req,res)=>{
     var msg = req.session.msg;

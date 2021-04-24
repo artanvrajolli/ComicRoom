@@ -172,7 +172,17 @@ const showgallery_comic = async (req,res)=>{
         ],
         limit:12
     }).then((data)=>{
+        if(data.length == 0 && searchKeywords != ""){
+            res.status(404)
+            res.render("v_404",{
+                msg: "NOTHING JUST SPACE HERE",
+                userData: req.session.userData ,
+                searchKeywords:searchKeywords
+            });
+            return;
+        }
         res.render("v_comicGallery",{ comics:data, userData: req.session.userData , searchKeywords:searchKeywords })
+
     }).catch((err)=>{
         res.send(err);
     })

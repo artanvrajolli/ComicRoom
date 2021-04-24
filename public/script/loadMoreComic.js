@@ -13,9 +13,11 @@ function LoadMorefun(){
         <center id="loading_text">Loading...</center>
         `)
     }
-    // http://localhost:8082/ajax/comic/1
-    fetch("/ajax/comic/"+offset,{
-        method:"put"
+    const urlParams = new URLSearchParams(window.location.search);
+    const myParam = urlParams.get('keyword') || "";
+
+    fetch("/ajax/comic/"+offset+"?keyword="+myParam,{
+        method:"get"
     }).then(response => response.json())
     .then(data_array => {
         data_array.forEach((data)=>{
