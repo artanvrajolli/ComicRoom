@@ -20,7 +20,7 @@ app.use(fileUpload({
     useTempFiles : true,
     tempFileDir : __dirname+'/public/tmp/'
 }));
-//
+
 // set view engine to use .ejs files
 app.set('view engine','ejs');
 
@@ -31,10 +31,8 @@ app.use(express.json())
 // public folder
 app.use("/public",express.static(__dirname+"/public"));
 
-
 // routers for all routers 
 app.use('/',mainRouter)
-
 
 // 404 error handler
 app.use((req,res)=>{
@@ -55,10 +53,9 @@ db.authenticate().then(()=>{
 })
 // sync with database
 db.sync();
-//db.sync({ force: true })
+
 // listen server port 8082
 app.listen(8082,console.log("Server [Online]"))
-
 
 // clean tmp folder everytime on starup server
 fs.readdir("public/tmp", (err, files) => {
@@ -70,6 +67,6 @@ fs.readdir("public/tmp", (err, files) => {
       });
     }
     fs.mkdir("public/uploads",(err)=>{}); // create file uploads to allow upload comics
-    console.log("tmp folder is clean")
+    console.log("TMP folder is clean")
   });
 

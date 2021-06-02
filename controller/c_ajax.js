@@ -77,8 +77,44 @@ const fetchComic = (req, res) => {
     })
 
 }
+const fetchReadingList = (req,res)=>{
+//////////
+var offset_parma = req.params.offset;
+var searchKeywords = req.query.keyword || "";
+console.log(offset_parma,searchKeywords)
+lastPage_table.findAndCountAll({
+    include: {
+        model:comic_table,
+        where:{
+             [Op.or]:{
+                title: {[Op.like]: '%'+searchKeywords+'%'},
+                description:{[Op.like]: '%'+searchKeywords+'%'},
+                author:{[Op.like]: '%'+searchKeywords+'%'}
+             }
+        }
+    },
+    where:{
+        userId: req.session.userData.id,
+        pageNumber:{
+            [Op.gt]:1
+        }
+    },
+    offset: parseInt(offset_parma),
+    limit: 12
+ }).then((data)=>{
+    if (data.length != 0) {
+        res.send(data.rows);
+        return;
+    }
+    res.send("");
+}).catch((err)=>{
+    res.send(err);
+})
+
+}
 
 module.exports = {
     updateLastPage,
-    fetchComic
+    fetchComic,
+    fetchReadingList
 }

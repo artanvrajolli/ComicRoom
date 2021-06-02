@@ -11,17 +11,23 @@
       <div class="d-flex flex-wrap align-items-center justify-content-center justify-content-lg-start mx-5">  
         <ul class=" nav col-12 col-lg-auto me-lg-auto mb-2 justify-content-center mb-md-0">
           <li><a href="/comic" class="nav-link px-2 text-secondary"><i class="fas fa-globe"></i> Gallery</a></li>
+          <% if(typeof userData != 'undefined'){%>
+          <li><a href="/readinglist" class="nav-link px-2 text-secondary"><i class="fas fa-clipboard-list"></i> Reading List</a></li>
+          <% } %>
           <li style="cursor: pointer;<% if(typeof searchKeywords != "undefined" && searchKeywords != ""){%>display: none;<%}%>" id="searchButton" class="nav-link px-2 text-secondary"><i class="fas fa-search"></i> Search</li>
           <li>
 
             <div id="formSearch" style="margin-top: 2px;<% if(typeof searchKeywords == "undefined" || searchKeywords == ""){%>display: none; <%}%>" class="form-group has-feedback">
-              <form class="input-group" method="GET" action="/comic">
+              <form id="searchOption" class="input-group" method="GET" action="/comic">
                 <span onclick="document.getElementById('submit_search').click();" class="input-group-addon" style="border:1px solid white;background-color:  #212529;border-radius: 7px 0 0 7px;padding-top: 2px;"><span style="font-size: 27px;padding:4px;color: #636464;" class="fas fa-search"></span></span>
-
                 <input name="keyword" id="searchInput" value="<% if(typeof searchKeywords != "undefined"){%><%=searchKeywords%><%}%>" type="text" class="form-control"  placeholder="Search..." style="border-left: 0px;  color:white;  background-color: #212529;">
-              
-                <button id="submit_search" style="display: none;">Hidden Button</button>
+                <!-- To use Enter from KeyBoard -->
+                <button id="submit_search" style="display: none;">Hidden Button for Search</button>
               </form>
+              <script>
+                spliter = window.location.pathname.split(/\//);
+                document.getElementById('searchOption').setAttribute("action",spliter[spliter.length-1]);
+              </script>
             </div>
           </li>
         </ul>

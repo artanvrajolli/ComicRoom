@@ -1,20 +1,20 @@
-
-
 <%-include("header")%>
+
 <div id="content_body" class="container content_c mt-2">
   <div id="bodyComic" class="row justify-content-center">
-    <% comics.forEach(comic=>{ %>
+    <% data.forEach(d=>{ comic = d.comic %>
 
       <a style="text-decoration: none;" class="col-md-3" href="comic/show/<%-comic.id%>">
 
         <div class="d-flex align-items-center" style="height: 300px;  border-radius: 2.5%;"> 
           <img style="max-height: 100%;max-width: 100%;" src="public\uploads\<%=comic.savedFolder%>\<%=comic.coverImage%>" class="mx-auto d-block coverImage" alt="<%=comic.title%>">
         </div>
+
         <div class="d-flex justify-content-evenly">
-            <p class="text-justify text-white" style="overflow:hidden;width: 150px;"><%=comic.title%></p>
-        <p> 2/3 [X]</p>
-            
-        </div>
+          <p class="text-justify text-white" style="overflow:hidden;width: 100px;height:50px"><%=comic.title%></p>
+      <p> <%=(d.pageNumber+1)%>/<%=comic.totalPages%></p>
+          
+      </div>
       </a>
     <%  }) %>
   </div>
@@ -25,4 +25,5 @@
   </div>
 </div>
 <script src="public/script/loadMoreComic.js"></script>
+
 <%-include("footer")%>

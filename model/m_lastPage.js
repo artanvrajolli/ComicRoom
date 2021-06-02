@@ -12,8 +12,18 @@ var lastPage_table = db.define("lastPage",{
     timestamps:false
 })
 
-Users_table.hasMany(lastPage_table);
+lastPage_table.belongsTo(comic_table, {
+    foreignKey: 'comicId'
+})
 comic_table.hasMany(lastPage_table);
+
+
+
+
+lastPage_table.belongsTo(Users_table, {
+    foreignKey: 'userId'
+})
+Users_table.hasMany(lastPage_table);
 
 
 module.exports = lastPage_table;

@@ -32,4 +32,5 @@ const comic_table = db.define("comics",{
 })
 
 
+
 module.exports = comic_table;
