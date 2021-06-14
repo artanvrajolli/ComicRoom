@@ -12,7 +12,7 @@
         <ul class=" nav col-12 col-lg-auto me-lg-auto mb-2 justify-content-center mb-md-0">
           <li><a href="/comic" class="nav-link px-2 text-secondary"><i class="fas fa-globe"></i> Gallery</a></li>
           <% if(typeof userData != 'undefined'){%>
-          <li><a href="/readinglist" class="nav-link px-2 text-secondary"><i class="fas fa-clipboard-list"></i> Reading List</a></li>
+          <li><a href="/onread" class="nav-link px-2 text-secondary"><i class="fas fa-history"></i> onRead</a></li>
           <% } %>
           <li style="cursor: pointer;<% if(typeof searchKeywords != "undefined" && searchKeywords != ""){%>display: none;<%}%>" id="searchButton" class="nav-link px-2 text-secondary"><i class="fas fa-search"></i> Search</li>
           <li>

@@ -1,8 +1,4 @@
-
-
-
-
-var checkOnlineMode =(req,res,next)=>{
+var isOnlineMode =(req,res,next)=>{
     if(req.session.userData){
         next();
     }else{
@@ -13,5 +9,5 @@ var checkOnlineMode =(req,res,next)=>{
 }
 
 module.exports = {
-    checkOnlineMode
+    isOnlineMode
 }
