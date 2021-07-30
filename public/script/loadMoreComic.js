@@ -7,7 +7,7 @@ var offset = 12;
 var inQuery = 0;
 
 spliter = window.location.pathname.split(/\//);
-var pathName = spliter[spliter.length-1];
+var pathName = spliter[spliter.length-1] || 'comic';
 console.log(pathName);
 function LoadMorefun(){
     if(inQuery == 1) return;
@@ -39,6 +39,7 @@ function LoadMorefun(){
                 `);
             }else{
                 var comic = data.comic;
+                console.log(comic);
                 BodyComic.insertAdjacentHTML("beforeend", `
  
                 <a style="text-decoration: none;" class="col-md-3" href="comic/show/${comic.id}">
