@@ -1,6 +1,6 @@
 const fs = require('fs');
 const unzip = require('unzip-stream')
-const unrar = require('@node_js/unrar');
+const { createExtractorFromFile } = require('node-unrar-js');
 const path = require('path');
 
 async function extractComics(filename,extension,pathOutput = ""){
@@ -14,30 +14,45 @@ async function extractComics(filename,extension,pathOutput = ""){
            }));
           file.on("finish", () => { resolve(true); }); 
           file.on("error", reject);
-        });
-    }else{
+        });    }else{
         // cbr -> rar -> image
-        return new Promise((resolve, reject) => {
-        const src = filename;
-        const dest = process.cwd()+'/public/uploads/'+pathOutput;
-        const command = 'e';
-        const switches = ['-o+', '-idcd'];
-        (async () => {
-          unrar.on('progress', percent => {
-            if(percent == "100%"){
-              resolve(true);
+        return new Promise(async (resolve, reject) => {
+          try {
+            const src = filename;
+            const dest = process.cwd()+'/public/uploads/'+pathOutput;
+            
+            // Create extractor from the RAR file
+            const extractor = await createExtractorFromFile({
+              filepath: src,
+              targetPath: dest
+            });
+            
+            // Extract all files
+            const extracted = extractor.extract();
+            const files = [...extracted.files];
+            
+            // Save all extracted files
+            for (const file of files) {
+              if (!file.extraction) continue;
+              
+              const filePath = path.join(dest, file.fileHeader.name);
+              const dir = path.dirname(filePath);
+              
+              // Create directory if it doesn't exist
+              if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+              }
+              
+              // Write file content
+              fs.writeFileSync(filePath, file.extraction);
             }
-          });         
-          await unrar.uncompress({
-            src,
-            dest,
-            command,
-            switches,
-          });
-        })().catch(console.error);
-
-        return 'unRAR mode'
-      });
+            
+            resolve(true);
+          } catch (error) {
+            console.error('Error extracting RAR file:', error);
+            reject(error);
+          }
+        });
     }
 }
 
