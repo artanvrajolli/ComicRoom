@@ -4,6 +4,8 @@ const comic_table = require('../model/m_comic')
 const Op = require('sequelize').Op;
 const lastPage_table = require('../model/m_lastPage');
 const crypto = require('crypto');
+const jobProcessor = require('../utils/jobProcessor');
+const UploadJob = require('../model/m_uploadJob');
 
 
 function checkIfisOnline(req,res,next){
@@ -16,43 +18,66 @@ function checkIfisOnline(req,res,next){
 }
 
 const PostComicUpload = async (req,res)=>{
-    if(typeof req.files.fileComicUpload == 'undefined' || req.files.fileComicUpload == null){
+    console.log('PostComicUpload called');
+    console.log('req.files:', req.files);
+    console.log('req.session.userData:', req.session.userData);
+    
+    // Check if req.files exists first
+    if(!req.files || typeof req.files.fileComicUpload == 'undefined' || req.files.fileComicUpload == null){
+        console.log('No file uploaded');
         req.session.msg = "Empty file given!";
         res.redirect("/comic/upload")
         return;
     }
     if(Array.isArray(req.files.fileComicUpload)){
+        console.log('Multiple files uploaded');
         req.session.msg = "More the one file has been given!";
         res.redirect("/comic/upload")
         return;
     }
     if(typeof req.session.userData == 'undefined'){
+        console.log('User not logged in');
         req.session.msg = "You must be logged in to upload an image!"
         res.redirect("/login")
         return;
     }
-    var extension = req.files.fileComicUpload.name.split(".").pop();
+    
+    console.log('File details:', {
+        name: req.files.fileComicUpload.name,
+        size: req.files.fileComicUpload.size,
+        tempFilePath: req.files.fileComicUpload.tempFilePath
+    });
+    
+    var extension = req.files.fileComicUpload.name.split(".").pop().toLowerCase();
     if(!["cbz","cbr"].includes(extension)){
+        console.log('Invalid file extension:', extension);
         req.session.msg = "Extension should be .cbz or .cbr";
         res.redirect("/comic/upload")
         return;
     }
-    if(extension == "cbr"){
-        fs.renameSync(req.files.fileComicUpload.tempFilePath,req.files.fileComicUpload.tempFilePath+".rar")
-    }
+    
     var comicFolder_Id = "comic_"+new Date().getTime();
-    console.log(await extractComics(req.files.fileComicUpload.tempFilePath,extension,comicFolder_Id))
-    comic_table.create({
-        savedFolder: comicFolder_Id,
-        uid: req.session.userData.id
-    }).then((data)=>{
-        res.redirect("/comic/"+comicFolder_Id+"/"+data.id)
-        req.session.msg = "";
-    }).catch((err)=>{
-        console.log(err);
-    })
     
-    
+    try {
+        // Add job to processing queue instead of processing immediately
+        const job = await jobProcessor.addJob({
+            userId: req.session.userData.id,
+            comicFolderId: comicFolder_Id,
+            fileName: req.files.fileComicUpload.name,
+            tempFilePath: req.files.fileComicUpload.tempFilePath,
+            extension: extension
+        });
+        
+        console.log('Job created successfully:', job.jobId);
+        req.session.msg = "Upload started! Your comic is being processed. You will be redirected when ready.";
+        req.session.uploadJobId = job.jobId; // Store job ID in session for notification tracking
+        req.session.uploadFileName = req.files.fileComicUpload.name;
+        res.redirect("/comic/status/" + job.jobId);
+    } catch (error) {
+        console.error('Error starting upload job:', error);
+        req.session.msg = "Error starting upload process. Please try again.";
+        res.redirect("/comic/upload");
+    }
 }
 
 function findMainFolderImages(fileOrDir){
@@ -204,4 +229,110 @@ const fetchPage = async (id_comic,userId)=>{
     return data.pageNumber;
 }
 
-module.exports = {  PostComicUpload , findMainFolderImages , UpdateComicDetails,showcomic_id ,showgallery_comic,checkIfisOnline,getUpdateComicDetails}
+const getUploadStatus = async (req, res) => {
+    const jobId = req.params.jobId;
+    
+    try {
+        const job = await jobProcessor.getJobStatus(jobId);
+        
+        if (!job) {
+            req.session.msg = "Upload job not found.";
+            res.redirect("/comic");
+            return;
+        }
+        
+        // Check if user owns this job
+        if (req.session.userData && job.userId !== req.session.userData.id) {
+            req.session.msg = "Access denied.";
+            res.redirect("/comic");
+            return;
+        }
+        
+        var msg = req.session.msg;
+        req.session.msg = "";
+        
+        res.render("v_uploadStatus", {
+            userData: req.session.userData,
+            job: job,
+            msg: msg
+        });
+        
+    } catch (error) {
+        console.error('Error getting upload status:', error);
+        req.session.msg = "Error checking upload status.";
+        res.redirect("/comic");
+    }
+}
+
+const getUploadStatusAPI = async (req, res) => {
+    const jobId = req.params.jobId;
+    console.log(`API: Checking status for job ${jobId}`);
+    
+    try {
+        const job = await jobProcessor.getJobStatus(jobId);
+        
+        if (!job) {
+            console.log(`API: Job ${jobId} not found`);
+            return res.status(404).json({ error: "Job not found" });
+        }
+        
+        // Check if user owns this job
+        if (req.session.userData && job.userId !== req.session.userData.id) {
+            console.log(`API: Access denied for job ${jobId}, user ${req.session.userData.id} vs job user ${job.userId}`);
+            return res.status(403).json({ error: "Access denied" });
+        }
+        
+        const response = {
+            status: job.status,
+            progress: job.progress,
+            comicId: job.comicId,
+            comicFolderId: job.comicFolderId,
+            errorMessage: job.errorMessage
+        };
+        
+        console.log(`API: Returning status for job ${jobId}:`, response);
+        res.json(response);
+        
+    } catch (error) {
+        console.error('Error getting upload status via API:', error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+}
+
+const getActiveJobs = async (req, res) => {
+    console.log('API: Getting active jobs for user:', req.session.userData?.id);
+    
+    if (!req.session.userData) {
+        console.log('API: User not authenticated');
+        return res.status(401).json({ error: "Not authenticated" });
+    }
+    
+    try {
+        const activeJobs = await UploadJob.findAll({
+            where: {
+                userId: req.session.userData.id,
+                status: ['pending', 'processing']
+            },
+            attributes: ['jobId', 'fileName', 'status', 'progress', 'createdAt']
+        });
+        
+        console.log(`API: Found ${activeJobs.length} active jobs for user ${req.session.userData.id}`);
+        res.json({ jobs: activeJobs });
+    } catch (error) {
+        console.error('Error getting active jobs:', error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+}
+
+module.exports = {  
+    PostComicUpload, 
+    findMainFolderImages, 
+    UpdateComicDetails,
+    showcomic_id,
+    showgallery_comic,
+    checkIfisOnline,
+    getUpdateComicDetails,
+    getUploadStatus,
+    getUploadStatusAPI,
+    getActiveJobs
+}

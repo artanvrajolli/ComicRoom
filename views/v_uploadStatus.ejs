@@ -1,0 +1,268 @@
+<%-include("header")%>
+<style>
+.status-container {
+    max-width: 600px;
+    margin: 50px auto;
+    padding: 30px;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    background: white;
+}
+
+.progress-circle {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    border: 8px solid #f3f3f3;
+    border-top: 8px solid #28a745;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 20px;
+}
+
+.progress-circle.completed {
+    border-top: 8px solid #28a745;
+    animation: none;
+}
+
+.progress-circle.failed {
+    border-top: 8px solid #dc3545;
+    animation: none;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.status-text {
+    text-align: center;
+    font-size: 18px;
+    margin-bottom: 20px;
+}
+
+.progress-bar-container {
+    background-color: #f8f9fa;
+    border-radius: 25px;
+    padding: 3px;
+    margin: 20px 0;
+}
+
+.progress-bar {
+    height: 30px;
+    border-radius: 25px;
+    transition: width 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: bold;
+}
+
+.btn-redirect {
+    display: none;
+    margin-top: 20px;
+}
+</style>
+
+<div class="container content_c mt-3">
+    <div class="status-container">
+        <% if(typeof msg != 'undefined' && msg != ""){ %>
+        <div class="alert alert-info text-center"><%=msg%></div>
+        <%}%>
+
+        <div class="text-center">
+            <h2>Processing Your Comic</h2>
+            <div id="progressCircle" class="progress-circle"></div>
+            
+            <div id="statusText" class="status-text">
+                <% if(job.status === 'pending') { %>
+                    Waiting in queue...
+                <% } else if(job.status === 'processing') { %>
+                    Extracting comic files...
+                <% } else if(job.status === 'completed') { %>
+                    Processing completed!
+                <% } else if(job.status === 'failed') { %>
+                    Processing failed
+                <% } %>
+            </div>
+
+            <div class="progress-bar-container">
+                <div id="progressBar" class="progress-bar bg-success" style="width: <%=job.progress%>%;">
+                    <span id="progressText"><%=job.progress%>%</span>
+                </div>
+            </div>
+
+            <div id="fileName" class="text-muted">
+                <strong>File:</strong> <%=job.fileName%>
+            </div>
+
+            <div id="debugInfo" class="mt-2" style="font-size: 12px; color: #6c757d;">
+                <div>Job ID: <%=job.jobId%></div>
+                <div id="lastUpdate">Last updated: <span id="timestamp">--</span></div>
+                <div id="pollStatus" style="color: #007bff;">Ready to check status...</div>
+            </div>
+
+            <% if(job.status === 'failed' && job.errorMessage) { %>
+            <div class="alert alert-danger mt-3">
+                <strong>Error:</strong> <%=job.errorMessage%>
+            </div>
+            <% } %>
+
+            <div id="redirectInfo" class="mt-3" style="display: none;">
+                <p class="text-success">Comic processed successfully!</p>
+                <p>Redirecting to your comic in <span id="countdown">3</span> seconds...</p>
+            </div>
+
+            <a id="btnRedirect" href="#" class="btn btn-success btn-redirect">View Your Comic</a>
+            <a href="/comic" class="btn btn-secondary mt-3">Back to Gallery</a>
+        </div>
+    </div>
+</div>
+
+<script>
+let jobId = '<%=job.jobId%>';
+let currentStatus = '<%=job.status%>';
+let isPolling = false;
+
+function updateStatus() {
+    if (isPolling) return; // Prevent multiple simultaneous requests
+    isPolling = true;
+    
+    // Update debug info
+    document.getElementById('pollStatus').textContent = 'Checking status...';
+    document.getElementById('pollStatus').style.color = '#ffc107';
+    
+    console.log('Checking status for job:', jobId);
+    
+    fetch(`/ajax/upload/status/${jobId}`)
+        .then(response => {
+            console.log('Response status:', response.status);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Status data received:', data);
+            
+            // Update timestamp
+            document.getElementById('timestamp').textContent = new Date().toLocaleTimeString();
+            document.getElementById('pollStatus').textContent = 'Status updated successfully';
+            document.getElementById('pollStatus').style.color = '#28a745';
+            
+            const progressBar = document.getElementById('progressBar');
+            const progressText = document.getElementById('progressText');
+            const statusText = document.getElementById('statusText');
+            const progressCircle = document.getElementById('progressCircle');
+            
+            // Update progress
+            progressBar.style.width = data.progress + '%';
+            progressText.textContent = data.progress + '%';
+            
+            // Update status text
+            switch(data.status) {
+                case 'pending':
+                    statusText.textContent = 'Waiting in queue...';
+                    progressCircle.className = 'progress-circle'; // Reset classes
+                    break;
+                case 'processing':
+                    statusText.textContent = 'Extracting comic files...';
+                    progressCircle.className = 'progress-circle'; // Reset classes
+                    break;
+                case 'completed':
+                    statusText.textContent = 'Processing completed!';
+                    progressCircle.className = 'progress-circle completed';
+                    document.getElementById('pollStatus').textContent = 'Processing complete! Redirecting...';
+                    document.getElementById('pollStatus').style.color = '#28a745';
+                    
+                    if (data.comicId && data.comicFolderId) {
+                        showRedirectInfo(data.comicFolderId, data.comicId);
+                    }
+                    return; // Stop polling
+                case 'failed':
+                    statusText.textContent = 'Processing failed';
+                    progressCircle.className = 'progress-circle failed';
+                    document.getElementById('pollStatus').textContent = 'Processing failed';
+                    document.getElementById('pollStatus').style.color = '#dc3545';
+                    
+                    if (data.errorMessage) {
+                        statusText.innerHTML += '<br><small class="text-danger">' + data.errorMessage + '</small>';
+                    }
+                    return; // Stop polling
+                default:
+                    console.warn('Unknown status:', data.status);
+            }
+            
+            currentStatus = data.status;
+            
+            // Continue polling if not completed or failed
+            if (data.status === 'pending' || data.status === 'processing') {
+                setTimeout(() => {
+                    isPolling = false;
+                    updateStatus();
+                }, 2000); // Poll every 2 seconds
+            } else {
+                isPolling = false;
+            }
+        })
+        .catch(error => {
+            console.error('Error checking status:', error);
+            isPolling = false;
+            
+            // Update debug info
+            document.getElementById('pollStatus').textContent = 'Error checking status - retrying...';
+            document.getElementById('pollStatus').style.color = '#dc3545';
+            
+            // Show error message to user
+            const statusText = document.getElementById('statusText');
+            statusText.innerHTML = 'Error checking status. <br><small class="text-muted">Retrying in 5 seconds...</small>';
+            
+            // Retry after 5 seconds on error
+            setTimeout(updateStatus, 5000);
+        });
+}
+
+function showRedirectInfo(comicFolderId, comicId) {
+    console.log('Showing redirect info for:', comicFolderId, comicId);
+    
+    const redirectInfo = document.getElementById('redirectInfo');
+    const btnRedirect = document.getElementById('btnRedirect');
+    const countdown = document.getElementById('countdown');
+    
+    redirectInfo.style.display = 'block';
+    btnRedirect.style.display = 'inline-block';
+    btnRedirect.href = `/comic/${comicFolderId}/${comicId}`;
+    
+    let seconds = 5; // Give user more time to see the success
+    countdown.textContent = seconds;
+    
+    const timer = setInterval(() => {
+        seconds--;
+        countdown.textContent = seconds;
+        
+        if (seconds <= 0) {
+            clearInterval(timer);
+            console.log('Redirecting to:', btnRedirect.href);
+            window.location.href = btnRedirect.href;
+        }
+    }, 1000);
+}
+
+// Initialize based on current status
+console.log('Initial status:', currentStatus);
+
+if (currentStatus === 'completed') {
+    document.getElementById('progressCircle').className = 'progress-circle completed';
+    <% if(job.comicId && job.comicFolderId) { %>
+    showRedirectInfo('<%=job.comicFolderId%>', <%=job.comicId%>);
+    <% } %>
+} else if (currentStatus === 'failed') {
+    document.getElementById('progressCircle').className = 'progress-circle failed';
+} else {
+    // Start polling for pending or processing jobs
+    console.log('Starting polling...');
+    setTimeout(updateStatus, 1000); // Start checking after 1 second
+}
+</script>
+
+<%-include("footer")%> 

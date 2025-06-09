@@ -4,11 +4,11 @@ const Users_table = require('./m_users');
 
 const comic_table = db.define("comics",{
     title:{
-        type:Sequelize.STRING(50),
+        type:Sequelize.STRING(1000),
         allowNull:true
     },
     author:{
-        type:Sequelize.STRING(50),
+        type:Sequelize.STRING(1000),
         allowNull:true
     },
     coverImage:{
@@ -16,7 +16,7 @@ const comic_table = db.define("comics",{
         allowNull:true
     },
     description:{
-        type:Sequelize.STRING(1000),
+        type:Sequelize.STRING(5000),
         allowNull:true
     },
     savedFolder:{

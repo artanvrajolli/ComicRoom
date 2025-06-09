@@ -60,7 +60,7 @@
                 </div>
 
                 <div class="col-9">
-                    <form method="post" enctype="multipart/form-data">   
+                    <form method="post" enctype="multipart/form-data" onsubmit="return false;">   
                         <div>
                             <div class="progress">
                                 <div id="progressBar" class="progress-bar progress-bar-striped bg-success" role="progressbar" style="width: 0%" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100"></div>
@@ -69,12 +69,11 @@
                             <p id="loaded_n_total"></p>
                                 <div class="form-group files">
                                   <label>Upload Your Comic File </label>
-                                  <input name="fileComicUpload" id="file1" type="file" onchange="uploadFile()" class="form-control" >
+                                  <input name="fileComicUpload" id="file1" type="file" onchange="uploadFile()" class="form-control" accept=".cbz,.cbr">
                                 </div>
                                 <div>
 
                                 </div>
-                                <button style="display: none;" class="btn btn-success mt-2">Upload Comic</button>
                         </div>
                     </form>
                     
@@ -89,6 +88,20 @@
     
     function uploadFile() {
       var file = _("file1").files[0];
+      
+      // Check if a file is selected
+      if (!file) {
+        _("status").innerHTML = "Please select a file first.";
+        return;
+      }
+      
+      // Check file extension
+      var fileName = file.name.toLowerCase();
+      if (!fileName.endsWith('.cbz') && !fileName.endsWith('.cbr')) {
+        _("status").innerHTML = "Please select a .cbz or .cbr file.";
+        return;
+      }
+      
       // alert(file.name+" | "+file.size+" | "+file.type);
       var formdata = new FormData();
       formdata.append("fileComicUpload", file);
@@ -111,16 +124,25 @@
     }
     
     function completeHandler(event) {
-        location.replace(event.target.responseURL)
-    //   _("status").innerHTML = event.target.responseText;
-    //   _("progressBar").value = 0; //wil clear progress bar after successful upload
+        console.log('Upload complete. Status:', event.target.status);
+        console.log('Response URL:', event.target.responseURL);
+        console.log('Response text:', event.target.responseText);
+        
+        if (event.target.status === 200) {
+            _("status").innerHTML = "Upload successful! Redirecting...";
+            location.replace(event.target.responseURL);
+        } else {
+            _("status").innerHTML = "Upload failed. Please try again.";
+        }
     }
     
     function errorHandler(event) {
-      _("status").innerHTML = "Upload Failed";
+      console.error('Upload error:', event);
+      _("status").innerHTML = "Upload Failed - " + (event.error || 'Unknown error');
     }
     
     function abortHandler(event) {
+      console.log('Upload aborted:', event);
       _("status").innerHTML = "Upload Aborted";
     }
     </script>

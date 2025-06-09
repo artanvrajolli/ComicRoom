@@ -5,68 +5,105 @@ const app = express();
 const db = require('./config/database');
 const mainRouter = require('./routers/mainRouter')
 const fs = require('fs');
+const jobProcessor = require('./utils/jobProcessor');
 
 // session handler
 app.use(session({
-    secret:"ComicRoom_lambda",
-    saveUninitialized:false,
-    resave:false,
-    cookie: { maxAge: 7*86400000 }
-    }))
+    secret: "ComicRoom_lambda",
+    saveUninitialized: false,
+    resave: false,
+    cookie: { maxAge: 7 * 86400000 }
+}))
 
 // file upload handler
 app.use(fileUpload({
     createParentPath: true,
-    useTempFiles : true,
-    tempFileDir : __dirname+'/public/tmp/'
+    useTempFiles: true,
+    tempFileDir: __dirname + '/public/tmp/',
+    debug: true
 }));
 
+// Debug middleware to log file uploads
+app.use((req, res, next) => {
+    if (req.method === 'POST' && req.url === '/comic/upload') {
+        console.log('=== File Upload Debug Info ===');
+        console.log('Request method:', req.method);
+        console.log('Request URL:', req.url);
+        console.log('Content-Type:', req.headers['content-type']);
+        console.log('req.files exists:', !!req.files);
+        if (req.files) {
+            console.log('req.files keys:', Object.keys(req.files));
+            console.log('req.files:', req.files);
+        }
+        console.log('==============================');
+    }
+    next();
+});
+
 // set view engine to use .ejs files
-app.set('view engine','ejs');
+app.set('view engine', 'ejs');
 
 // body parser
-app.use(express.urlencoded({ extended: true}))
+app.use(express.urlencoded({ extended: true }))
 app.use(express.json())
 
 // public folder
-app.use("/public",express.static(__dirname+"/public"));
+app.use("/public", express.static(__dirname + "/public"));
 
 // routers for all routers 
-app.use('/',mainRouter)
+app.use('/', mainRouter)
 
 // 404 error handler
-app.use((req,res)=>{
+app.use((req, res) => {
     res.status(404);
     var msg = req.session.msg;
     req.session.msg = "";
-    res.render("v_404",{ 
-        msg, 
-        userData: req.session.userData 
+    res.render("v_404", {
+        msg,
+        userData: req.session.userData
     });
 })
 
 // check if db is ready / authenticate
-db.authenticate().then(()=>{
+db.authenticate().then(() => {
     console.log("Database [Online]")
-}).catch((err)=>{
-    console.log(err,"Database [Fail to Connect]")
+}).catch((err) => {
+    console.log(err, "Database [Fail to Connect]")
 })
 // sync with database
 db.sync();
 
+// Start the background job processor
+jobProcessor.start();
+
 // listen server port 8082
-app.listen(8082,console.log("Server [Online]"))
+app.listen(8082, console.log("Server [Online]"))
 
 // clean tmp folder everytime on starup server
 fs.readdir("public/tmp", (err, files) => {
-    if (err) throw err;
-  
-    for (const file of files) {
-      fs.unlink(process.cwd()+"/public/tmp/"+file, err => {
-        if (err) throw err;
-      });
+    if (err) {
+        files = [];
     }
-    fs.mkdir("public/uploads",(err)=>{}); // create file uploads to allow upload comics
+
+    for (const file of files) {
+        fs.unlink(process.cwd() + "/public/tmp/" + file, err => {
+            if (err) throw err;
+        });
+    }
+    fs.mkdir("public/uploads", (err) => { }); // create file uploads to allow upload comics
     console.log("TMP folder is clean")
-  });
+});
+
+// Graceful shutdown
+process.on('SIGINT', () => {
+    console.log('Shutting down gracefully...');
+    jobProcessor.stop();
+    process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+    console.log('Shutting down gracefully...');
+    jobProcessor.stop();
+    process.exit(0);
+});
 
