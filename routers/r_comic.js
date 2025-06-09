@@ -1,6 +1,5 @@
-
 const router = require('express').Router();
-const {PostComicUpload ,UpdateComicDetails ,showcomic_id,showgallery_comic, checkIfisOnline, getUpdateComicDetails, getUploadStatus, getUploadStatusAPI} = require('../controller/c_comic')
+const {PostComicUpload ,UpdateComicDetails ,showcomic_id,showgallery_comic, checkIfisOnline, getUpdateComicDetails, getUploadStatus, getUploadStatusAPI, PostChunkedUpload} = require('../controller/c_comic')
 
 //Show gallery
 router.get("/",showgallery_comic)
@@ -15,6 +14,9 @@ router.get("/upload",checkIfisOnline,(req,res)=>{
 
 // comic upload post
 router.post("/upload",PostComicUpload)
+
+// chunked upload endpoint
+router.post("/upload-chunk", checkIfisOnline, PostChunkedUpload)
 
 // upload status page
 router.get("/status/:jobId", checkIfisOnline, getUploadStatus)

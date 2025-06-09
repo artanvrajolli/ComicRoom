@@ -20,7 +20,14 @@ app.use(fileUpload({
     createParentPath: true,
     useTempFiles: true,
     tempFileDir: __dirname + '/public/tmp/',
-    debug: true
+    debug: true,
+    limits: { 
+        fileSize: 2 * 1024 * 1024 * 1024 // 2GB limit
+    },
+    abortOnLimit: false,
+    responseOnLimit: "File size limit has been reached",
+    uploadTimeout: 10 * 60 * 1000, // 10 minutes timeout
+    preserveExtension: true
 }));
 
 // Debug middleware to log file uploads
@@ -44,8 +51,24 @@ app.use((req, res, next) => {
 app.set('view engine', 'ejs');
 
 // body parser
-app.use(express.urlencoded({ extended: true }))
-app.use(express.json())
+app.use(express.urlencoded({ 
+    extended: true,
+    limit: '2gb',
+    parameterLimit: 50000
+}))
+app.use(express.json({
+    limit: '2gb'
+}))
+
+// Increase server timeout for large uploads
+app.use((req, res, next) => {
+    // Set longer timeout for upload endpoints
+    if (req.url.includes('/upload')) {
+        req.setTimeout(15 * 60 * 1000); // 15 minutes
+        res.setTimeout(15 * 60 * 1000); // 15 minutes
+    }
+    next();
+});
 
 // public folder
 app.use("/public", express.static(__dirname + "/public"));
@@ -77,7 +100,14 @@ db.sync();
 jobProcessor.start();
 
 // listen server port 8082
-app.listen(8082, console.log("Server [Online]"))
+const server = app.listen(8082, () => {
+    console.log("Server [Online]");
+});
+
+// Set server timeouts for large uploads
+server.timeout = 15 * 60 * 1000; // 15 minutes
+server.keepAliveTimeout = 16 * 60 * 1000; // 16 minutes
+server.headersTimeout = 17 * 60 * 1000; // 17 minutes
 
 // clean tmp folder everytime on starup server
 fs.readdir("public/tmp", (err, files) => {
@@ -86,10 +116,44 @@ fs.readdir("public/tmp", (err, files) => {
     }
 
     for (const file of files) {
-        fs.unlink(process.cwd() + "/public/tmp/" + file, err => {
-            if (err) throw err;
-        });
+        const filePath = process.cwd() + "/public/tmp/" + file;
+        
+        // Check if it's a directory (chunks folder)
+        try {
+            if (fs.lstatSync(filePath).isDirectory() && file === 'chunks') {
+                // Clean up old chunk directories
+                const chunkDirs = fs.readdirSync(filePath);
+                for (const chunkDir of chunkDirs) {
+                    const chunkDirPath = filePath + "/" + chunkDir;
+                    try {
+                        const chunkFiles = fs.readdirSync(chunkDirPath);
+                        for (const chunkFile of chunkFiles) {
+                            fs.unlinkSync(chunkDirPath + "/" + chunkFile);
+                        }
+                        fs.rmdirSync(chunkDirPath);
+                    } catch (chunkErr) {
+                        console.log('Error cleaning chunk directory:', chunkErr.message);
+                    }
+                }
+            } else if (!fs.lstatSync(filePath).isDirectory()) {
+                // Regular file cleanup
+                fs.unlink(filePath, err => {
+                    if (err) throw err;
+                });
+            }
+        } catch (statErr) {
+            // If stat fails, try to unlink as regular file
+            fs.unlink(filePath, err => {
+                if (err && err.code !== 'ENOENT') console.log('Error cleaning file:', err.message);
+            });
+        }
     }
+    
+    // Ensure chunks directory exists
+    if (!fs.existsSync("public/tmp/chunks")) {
+        fs.mkdirSync("public/tmp/chunks", { recursive: true });
+    }
+    
     fs.mkdir("public/uploads", (err) => { }); // create file uploads to allow upload comics
     console.log("TMP folder is clean")
 });

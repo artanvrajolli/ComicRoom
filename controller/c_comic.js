@@ -324,6 +324,104 @@ const getActiveJobs = async (req, res) => {
     }
 }
 
+const PostChunkedUpload = async (req, res) => {
+    try {
+        console.log('Chunked upload received:', {
+            chunkIndex: req.body.chunkIndex,
+            totalChunks: req.body.totalChunks,
+            fileName: req.body.fileName,
+            uploadId: req.body.uploadId
+        });
+
+        // Check authentication
+        if (!req.session.userData) {
+            return res.status(401).json({ error: "Authentication required" });
+        }
+
+        const { chunkIndex, totalChunks, fileName, uploadId } = req.body;
+        const chunk = req.files?.chunk;
+
+        if (!chunk || !uploadId || chunkIndex === undefined || !totalChunks || !fileName) {
+            return res.status(400).json({ error: "Missing required parameters" });
+        }
+
+        // Validate file extension
+        const extension = fileName.split(".").pop().toLowerCase();
+        if (!["cbz", "cbr"].includes(extension)) {
+            return res.status(400).json({ error: "Only .cbz and .cbr files are allowed" });
+        }
+
+        // Create chunks directory if it doesn't exist
+        const chunksDir = process.cwd() + `/public/tmp/chunks/${uploadId}`;
+        if (!fs.existsSync(chunksDir)) {
+            fs.mkdirSync(chunksDir, { recursive: true });
+        }
+
+        // Save the chunk
+        const chunkPath = `${chunksDir}/chunk_${chunkIndex}`;
+        await chunk.mv(chunkPath);
+
+        console.log(`Chunk ${chunkIndex}/${totalChunks - 1} saved for upload ${uploadId}`);
+
+        // Check if all chunks are received
+        const chunkFiles = fs.readdirSync(chunksDir);
+        if (chunkFiles.length === parseInt(totalChunks)) {
+            console.log(`All chunks received for upload ${uploadId}, assembling file...`);
+
+            // Assemble the file
+            const finalFilePath = process.cwd() + `/public/tmp/${uploadId}_${fileName}`;
+            const writeStream = fs.createWriteStream(finalFilePath);
+
+            for (let i = 0; i < totalChunks; i++) {
+                const chunkPath = `${chunksDir}/chunk_${i}`;
+                if (fs.existsSync(chunkPath)) {
+                    const chunkData = fs.readFileSync(chunkPath);
+                    writeStream.write(chunkData);
+                    fs.unlinkSync(chunkPath); // Clean up chunk
+                }
+            }
+
+            writeStream.end();
+
+            // Wait for the write stream to finish
+            await new Promise((resolve, reject) => {
+                writeStream.on('finish', resolve);
+                writeStream.on('error', reject);
+            });
+
+            // Clean up chunks directory
+            fs.rmdirSync(chunksDir);
+
+            // Create a job for processing
+            const comicFolderId = "comic_" + new Date().getTime();
+            const job = await jobProcessor.addJob({
+                userId: req.session.userData.id,
+                comicFolderId: comicFolderId,
+                fileName: fileName,
+                tempFilePath: finalFilePath,
+                extension: extension
+            });
+
+            return res.json({
+                status: 'complete',
+                jobId: job.jobId,
+                message: 'File uploaded successfully and processing started'
+            });
+        } else {
+            return res.json({
+                status: 'chunk_received',
+                chunkIndex: chunkIndex,
+                totalReceived: chunkFiles.length,
+                totalExpected: totalChunks
+            });
+        }
+
+    } catch (error) {
+        console.error('Chunked upload error:', error);
+        res.status(500).json({ error: 'Server error during upload' });
+    }
+};
+
 module.exports = {  
     PostComicUpload, 
     findMainFolderImages, 
@@ -334,5 +432,6 @@ module.exports = {
     getUpdateComicDetails,
     getUploadStatus,
     getUploadStatusAPI,
-    getActiveJobs
+    getActiveJobs,
+    PostChunkedUpload
 }

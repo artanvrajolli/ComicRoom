@@ -7,6 +7,7 @@ class JobProcessor {
     constructor() {
         this.isProcessing = false;
         this.processingInterval = null;
+        this.cleanupInterval = null;
     }
 
     start() {
@@ -18,14 +19,23 @@ class JobProcessor {
         this.processingInterval = setInterval(() => {
             this.processNextJob();
         }, 5000); // Check for new jobs every 5 seconds
+        
+        // Start cleanup interval for stale chunks (every 30 minutes)
+        this.cleanupInterval = setInterval(() => {
+            this.cleanupStaleChunks();
+        }, 30 * 60 * 1000);
     }
 
     stop() {
         if (this.processingInterval) {
             clearInterval(this.processingInterval);
             this.processingInterval = null;
-            console.log('Job processor stopped');
         }
+        if (this.cleanupInterval) {
+            clearInterval(this.cleanupInterval);
+            this.cleanupInterval = null;
+        }
+        console.log('Job processor stopped');
     }
 
     async processNextJob() {
@@ -151,6 +161,50 @@ class JobProcessor {
         }
         
         return job;
+    }
+
+    async cleanupStaleChunks() {
+        try {
+            const chunksBasePath = process.cwd() + '/public/tmp/chunks';
+            if (!fs.existsSync(chunksBasePath)) {
+                return;
+            }
+
+            const chunkDirs = fs.readdirSync(chunksBasePath);
+            const now = Date.now();
+            const maxAge = 2 * 60 * 60 * 1000; // 2 hours
+
+            for (const chunkDir of chunkDirs) {
+                const chunkDirPath = `${chunksBasePath}/${chunkDir}`;
+                try {
+                    const stats = fs.statSync(chunkDirPath);
+                    if (now - stats.mtime.getTime() > maxAge) {
+                        console.log(`Cleaning up stale chunk directory: ${chunkDir}`);
+                        // Remove all chunk files
+                        const chunkFiles = fs.readdirSync(chunkDirPath);
+                        for (const chunkFile of chunkFiles) {
+                            fs.unlinkSync(`${chunkDirPath}/${chunkFile}`);
+                        }
+                        fs.rmdirSync(chunkDirPath);
+                    }
+                } catch (err) {
+                    console.error('Error cleaning chunk directory:', err.message);
+                }
+            }
+
+            // Also cleanup old failed upload jobs
+            await UploadJob.destroy({
+                where: {
+                    status: 'failed',
+                    createdAt: {
+                        [require('sequelize').Op.lt]: new Date(now - 24 * 60 * 60 * 1000) // Older than 24 hours
+                    }
+                }
+            });
+
+        } catch (error) {
+            console.error('Error during cleanup:', error);
+        }
     }
 }
 

@@ -67,13 +67,30 @@
                             </div>
                             <h3 id="status"></h3>
                             <p id="loaded_n_total"></p>
-                                <div class="form-group files">
-                                  <label>Upload Your Comic File </label>
-                                  <input name="fileComicUpload" id="file1" type="file" onchange="uploadFile()" class="form-control" accept=".cbz,.cbr">
+                            
+                            <div class="form-group files">
+                              <label>Upload Your Comic File </label>
+                              <input name="fileComicUpload" id="file1" type="file" onchange="uploadFile()" class="form-control" accept=".cbz,.cbr">
+                            </div>
+                            
+                            <div hidden class="mt-3">
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="uploadMethod" id="chunkedUpload" value="chunked" checked>
+                                    <label class="form-check-label" for="chunkedUpload">
+                                        <strong>Chunked Upload</strong> (Recommended for large files or slow connections)
+                                    </label>
                                 </div>
-                                <div>
-
+                                <br>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="uploadMethod" id="regularUpload" value="regular">
+                                    <label class="form-check-label" for="regularUpload">
+                                        <strong>Regular Upload</strong> (For smaller files with stable connection)
+                                    </label>
                                 </div>
+                                <small class="form-text text-muted">
+                                    Chunked upload is more reliable for large files and works better with Cloudflare tunnels.
+                                </small>
+                            </div>
                         </div>
                     </form>
                     
@@ -85,6 +102,10 @@
     function _(el) {
       return document.getElementById(el);
     }
+    
+    // Chunked upload configuration
+    const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks
+    const MAX_RETRIES = 3;
     
     function uploadFile() {
       var file = _("file1").files[0];
@@ -102,7 +123,27 @@
         return;
       }
       
-      // alert(file.name+" | "+file.size+" | "+file.type);
+      // Check file size (2GB limit)
+      if (file.size > 2 * 1024 * 1024 * 1024) {
+        _("status").innerHTML = "File size must be less than 2GB.";
+        return;
+      }
+      
+      // Get selected upload method
+      const uploadMethod = document.querySelector('input[name="uploadMethod"]:checked').value;
+      
+      if (uploadMethod === 'chunked') {
+        // Start chunked upload
+        startChunkedUpload(file);
+      } else {
+        // Start regular upload
+        startRegularUpload(file);
+      }
+    }
+    
+    function startRegularUpload(file) {
+      _("status").innerHTML = `Starting regular upload of ${file.name} (${(file.size/1048576).toFixed(2)} MB)...`;
+      
       var formdata = new FormData();
       formdata.append("fileComicUpload", file);
       var ajax = new XMLHttpRequest();
@@ -110,19 +151,164 @@
       ajax.addEventListener("load", completeHandler, false);
       ajax.addEventListener("error", errorHandler, false);
       ajax.addEventListener("abort", abortHandler, false);
-      ajax.open("POST", "/comic/upload"); // http://www.developphp.com/video/JavaScript/File-Upload-Progress-Bar-Meter-Tutorial-Ajax-PHP
-      //use file_upload_parser.php from above url
+      ajax.open("POST", "/comic/upload");
       ajax.send(formdata);
     }
     
     function progressHandler(event) {
       _("loaded_n_total").innerHTML = "Uploaded " + (event.loaded/1048576).toFixed(2) + " MB of " + (event.total/1048576).toFixed(2)+" MB";
       var percent = (event.loaded / event.total) * 100;
-      //_("progressBar").value = Math.round(percent);
       _("progressBar").style.width = Math.round(percent)+"%";
       _("status").innerHTML = Math.round(percent) + "% uploaded... please wait";
     }
     
+    async function startChunkedUpload(file) {
+      const uploadId = 'upload_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+      
+      _("status").innerHTML = `Starting upload of ${file.name} (${(file.size/1048576).toFixed(2)} MB)...`;
+      _("loaded_n_total").innerHTML = `Preparing ${totalChunks} chunks of ${(CHUNK_SIZE/1048576).toFixed(1)}MB each`;
+      
+      let uploadedChunks = 0;
+      let failedChunks = new Set();
+      
+      // Upload chunks in parallel (limited concurrency)
+      const concurrency = 3; // Max 3 chunks uploading simultaneously
+      const uploadPromises = [];
+      
+      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+        const uploadPromise = uploadChunkWithRetry(file, chunkIndex, totalChunks, uploadId, CHUNK_SIZE)
+          .then(() => {
+            uploadedChunks++;
+            updateProgress(uploadedChunks, totalChunks);
+          })
+          .catch((error) => {
+            console.error(`Failed to upload chunk ${chunkIndex}:`, error);
+            failedChunks.add(chunkIndex);
+            _("status").innerHTML = `Upload failed for chunk ${chunkIndex + 1}. Retrying...`;
+          });
+        
+        uploadPromises.push(uploadPromise);
+        
+        // Control concurrency
+        if (uploadPromises.length >= concurrency) {
+          await Promise.race(uploadPromises);
+          // Remove completed promises
+          for (let i = uploadPromises.length - 1; i >= 0; i--) {
+            if (uploadPromises[i].settled) {
+              uploadPromises.splice(i, 1);
+            }
+          }
+        }
+      }
+      
+      // Wait for all chunks to complete
+      try {
+        await Promise.all(uploadPromises);
+        
+        if (failedChunks.size > 0) {
+          _("status").innerHTML = `Upload failed. ${failedChunks.size} chunks could not be uploaded.`;
+          _("progressBar").style.width = "0%";
+          _("progressBar").className = "progress-bar progress-bar-striped bg-danger";
+        } else {
+          _("status").innerHTML = "Upload completed! Processing your comic...";
+          _("progressBar").style.width = "100%";
+          _("progressBar").className = "progress-bar progress-bar-striped bg-success";
+          
+          // The last chunk response should contain the job ID
+          // We'll wait a moment then redirect to status page
+          setTimeout(() => {
+            // Try to get job ID from the last successful response
+            // For now, redirect to comic gallery
+            _("status").innerHTML = "Redirecting...";
+            window.location.href = "/comic";
+          }, 2000);
+        }
+      } catch (error) {
+        console.error('Upload error:', error);
+        _("status").innerHTML = "Upload failed. Please try again.";
+        _("progressBar").className = "progress-bar progress-bar-striped bg-danger";
+      }
+    }
+    
+    async function uploadChunkWithRetry(file, chunkIndex, totalChunks, uploadId, chunkSize) {
+      let retries = 0;
+      
+      while (retries < MAX_RETRIES) {
+        try {
+          const result = await uploadChunk(file, chunkIndex, totalChunks, uploadId, chunkSize);
+          
+          // If this is the last chunk and upload is complete, handle job creation
+          if (result.status === 'complete' && result.jobId) {
+            setTimeout(() => {
+              window.location.href = `/comic/status/${result.jobId}`;
+            }, 1000);
+          }
+          
+          return result;
+        } catch (error) {
+          retries++;
+          if (retries >= MAX_RETRIES) {
+            throw error;
+          }
+          
+          // Wait before retry (exponential backoff)
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, retries) * 1000));
+        }
+      }
+    }
+    
+    function uploadChunk(file, chunkIndex, totalChunks, uploadId, chunkSize) {
+      return new Promise((resolve, reject) => {
+        const start = chunkIndex * chunkSize;
+        const end = Math.min(start + chunkSize, file.size);
+        const chunk = file.slice(start, end);
+        
+        const formdata = new FormData();
+        formdata.append("chunk", chunk);
+        formdata.append("chunkIndex", chunkIndex);
+        formdata.append("totalChunks", totalChunks);
+        formdata.append("fileName", file.name);
+        formdata.append("uploadId", uploadId);
+        
+        const xhr = new XMLHttpRequest();
+        
+        xhr.timeout = 60000; // 60 second timeout per chunk
+        
+        xhr.onload = function() {
+          if (xhr.status === 200) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              resolve(response);
+            } catch (e) {
+              reject(new Error('Invalid server response'));
+            }
+          } else {
+            reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText}`));
+          }
+        };
+        
+        xhr.onerror = function() {
+          reject(new Error('Network error'));
+        };
+        
+        xhr.ontimeout = function() {
+          reject(new Error('Request timeout'));
+        };
+        
+        xhr.open("POST", "/comic/upload-chunk");
+        xhr.send(formdata);
+      });
+    }
+    
+    function updateProgress(uploadedChunks, totalChunks) {
+      const percent = (uploadedChunks / totalChunks) * 100;
+      _("progressBar").style.width = Math.round(percent) + "%";
+      _("status").innerHTML = `Uploading... ${uploadedChunks}/${totalChunks} chunks complete (${Math.round(percent)}%)`;
+      _("loaded_n_total").innerHTML = `${uploadedChunks} of ${totalChunks} chunks uploaded`;
+    }
+    
+    // Legacy functions for fallback
     function completeHandler(event) {
         console.log('Upload complete. Status:', event.target.status);
         console.log('Response URL:', event.target.responseURL);
