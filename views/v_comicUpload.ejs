@@ -170,60 +170,48 @@
       _("loaded_n_total").innerHTML = `Preparing ${totalChunks} chunks of ${(CHUNK_SIZE/1048576).toFixed(1)}MB each`;
       
       let uploadedChunks = 0;
-      let failedChunks = new Set();
+      let jobId = null;
       
-      // Upload chunks in parallel (limited concurrency)
-      const concurrency = 3; // Max 3 chunks uploading simultaneously
-      const uploadPromises = [];
-      
-      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-        const uploadPromise = uploadChunkWithRetry(file, chunkIndex, totalChunks, uploadId, CHUNK_SIZE)
-          .then(() => {
+      // Upload chunks one at a time (sequential upload)
+      try {
+        for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+          _("status").innerHTML = `Uploading chunk ${chunkIndex + 1} of ${totalChunks}...`;
+          
+          try {
+            const result = await uploadChunkWithRetry(file, chunkIndex, totalChunks, uploadId, CHUNK_SIZE);
             uploadedChunks++;
             updateProgress(uploadedChunks, totalChunks);
-          })
-          .catch((error) => {
-            console.error(`Failed to upload chunk ${chunkIndex}:`, error);
-            failedChunks.add(chunkIndex);
-            _("status").innerHTML = `Upload failed for chunk ${chunkIndex + 1}. Retrying...`;
-          });
-        
-        uploadPromises.push(uploadPromise);
-        
-        // Control concurrency
-        if (uploadPromises.length >= concurrency) {
-          await Promise.race(uploadPromises);
-          // Remove completed promises
-          for (let i = uploadPromises.length - 1; i >= 0; i--) {
-            if (uploadPromises[i].settled) {
-              uploadPromises.splice(i, 1);
+            
+            // If this is the last chunk and upload is complete, store job ID
+            if (result.status === 'complete' && result.jobId) {
+              jobId = result.jobId;
             }
+            
+          } catch (error) {
+            console.error(`Failed to upload chunk ${chunkIndex}:`, error);
+            _("status").innerHTML = `Upload failed for chunk ${chunkIndex + 1}. Error: ${error.message}`;
+            _("progressBar").style.width = "0%";
+            _("progressBar").className = "progress-bar progress-bar-striped bg-danger";
+            return; // Stop uploading on first failure
           }
         }
-      }
-      
-      // Wait for all chunks to complete
-      try {
-        await Promise.all(uploadPromises);
         
-        if (failedChunks.size > 0) {
-          _("status").innerHTML = `Upload failed. ${failedChunks.size} chunks could not be uploaded.`;
-          _("progressBar").style.width = "0%";
-          _("progressBar").className = "progress-bar progress-bar-striped bg-danger";
-        } else {
-          _("status").innerHTML = "Upload completed! Processing your comic...";
-          _("progressBar").style.width = "100%";
-          _("progressBar").className = "progress-bar progress-bar-striped bg-success";
-          
-          // The last chunk response should contain the job ID
-          // We'll wait a moment then redirect to status page
-          setTimeout(() => {
-            // Try to get job ID from the last successful response
-            // For now, redirect to comic gallery
+        // All chunks uploaded successfully
+        _("status").innerHTML = "Upload completed! Processing your comic...";
+        _("progressBar").style.width = "100%";
+        _("progressBar").className = "progress-bar progress-bar-striped bg-success";
+        
+        // Redirect to status page if we have a job ID
+        setTimeout(() => {
+          if (jobId) {
+            _("status").innerHTML = "Redirecting to status page...";
+            window.location.href = `/comic/status/${jobId}`;
+          } else {
             _("status").innerHTML = "Redirecting...";
             window.location.href = "/comic";
-          }, 2000);
-        }
+          }
+        }, 2000);
+        
       } catch (error) {
         console.error('Upload error:', error);
         _("status").innerHTML = "Upload failed. Please try again.";
