@@ -3,62 +3,58 @@
 
 <head>
   <%-include("head_tags")%>
-    <title>ComicRoom</title>
+  <title>ComicRoom</title>
 </head>
 
-<body class="h-100 text-center text-white bg-dark">
+<body class="h-100 text-center text-white bg-dark" data-user-authenticated="<%= typeof userData != 'undefined' ? 'true' : 'false' %>">
   <!-- begin header -->
   <header style="background-color: #212121;border-bottom: 2px solid #353535;" class="p-3 text-white">
     <div class="container">
       <div class="d-flex flex-wrap align-items-center justify-content-center justify-content-lg-start mx-5">
         <ul class=" nav col-12 col-lg-auto me-lg-auto mb-2 justify-content-center mb-md-0">
           <li><a href="/comic" class="nav-link px-2 text-secondary"><i class="fas fa-globe"></i> Gallery</a></li>
-          <% if(typeof userData !='undefined' ){%>
-            <li><a href="/onread" class="nav-link px-2 text-secondary"><i class="fas fa-history"></i> Reading</a></li>
-            <li class="nav-link px-2 text-secondary position-relative">
-              <div id="uploadNotification" class="position-relative" style="display: none;">
-                <i class="fas fa-bell" style="font-size: 18px; cursor: pointer;"
-                  onclick="toggleNotificationDropdown()"></i>
-                <span id="notificationBadge"
-                  class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
-                  style="font-size: 10px; display: none;">
-                  0
-                </span>
-                <div id="notificationDropdown" class="position-absolute bg-dark border rounded p-2"
-                  style="display: none; top: 30px; right: -50px; min-width: 250px; z-index: 1000; box-shadow: 0 4px 8px rgba(0,0,0,0.3);">
-                  <div class="text-start">
-                    <h6 class="text-white mb-2">Upload Notifications</h6>
-                    <div id="notificationList"></div>
-                    <div class="mt-2">
-                      <button class="btn btn-sm btn-outline-light" onclick="clearNotifications()">Clear All</button>
-                    </div>
+          <li <% if(typeof userData != 'undefined' ){%>style="display: block;"<% }else{ %>style="display: none;"<% } %>><a href="/onread" class="nav-link px-2 text-secondary"><i class="fas fa-history"></i> Reading</a></li>
+          <li class="nav-link px-2 text-secondary position-relative">
+            <div id="uploadNotification" class="position-relative" style="display: none;">
+              <i class="fas fa-bell" style="font-size: 18px; cursor: pointer;"
+                onclick="toggleNotificationDropdown()"></i>
+              <span id="notificationBadge"
+                class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
+                style="font-size: 10px; display: none;">
+                0
+              </span>
+              <div id="notificationDropdown" class="position-absolute bg-dark border rounded p-2"
+                style="display: none; top: 30px; right: -50px; min-width: 250px; z-index: 1000; box-shadow: 0 4px 8px rgba(0,0,0,0.3);">
+                <div class="text-start">
+                  <h6 class="text-white mb-2">Upload Notifications</h6>
+                  <div id="notificationList"></div>
+                  <div class="mt-2">
+                    <button class="btn btn-sm btn-outline-light" onclick="clearNotifications()">Clear All</button>
                   </div>
                 </div>
               </div>
-            </li>
-            <% } %>
-              <li style="cursor: pointer;<% if(typeof searchKeywords !== 'undefined' && searchKeywords !== '' ){%>display:
-                none;<%}%>" id="searchButton" class="nav-link px-2 text-secondary"><i class="fas fa-search"></i> Search
-              </li>
-              <li>
+            </div>
+          </li>
+          <li <% if(typeof searchKeywords !== 'undefined' && searchKeywords !== '' ){%>style="cursor: pointer;display: none;"<% }else{ %>style="cursor: pointer;"<% } %> id="searchButton" class="nav-link px-2 text-secondary"><i class="fas fa-search"></i> Search
+          </li>
+          <li>
 
-                <div id="formSearch" style="margin-top: 2px;<% if(typeof searchKeywords === 'undefined' ||
-                  searchKeywords === '' ){%>display: none; <%}%>" class="form-group has-feedback">
-                    <form id="searchOption" class="input-group" method="GET" action="/comic">
-                      <span onclick="document.getElementById('submit_search').click();" class="input-group-addon"
-                        style="border:1px solid white;background-color:  #212529;border-radius: 7px 0 0 7px;padding-top: 2px;"><span
-                          style="font-size: 27px;padding:4px;color: #636464;" class="fas fa-search"></span></span>
-                      <input name="keyword" id="searchInput" value="<% if(typeof searchKeywords !== 'undefined'){%><%=searchKeywords%><%}%>" type="text" class="form-control" placeholder="Search..." style="border-left: 0px;
-                          color:white; background-color: #212529;">
-                          <!-- To use Enter from KeyBoard -->
-                          <button id="submit_search" style="display: none;">Hidden Button for Search</button>
-                    </form>
-                    <script>
-                      spliter = window.location.pathname.split(/\//);
-                      document.getElementById('searchOption').setAttribute("action", spliter[spliter.length - 1]);
-                    </script>
-                </div>
-              </li>
+            <div id="formSearch" <% if(typeof searchKeywords === 'undefined' || searchKeywords === '' ){%>style="margin-top: 2px;display: none;"<% }else{ %>style="margin-top: 2px;"<% } %> class="form-group has-feedback">
+              <form id="searchOption" class="input-group" method="GET" action="/comic">
+                <span onclick="document.getElementById('submit_search').click();" class="input-group-addon"
+                  style="border:1px solid white;background-color:  #212529;border-radius: 7px 0 0 7px;padding-top: 2px;"><span
+                    style="font-size: 27px;padding:4px;color: #636464;" class="fas fa-search"></span></span>
+                <input name="keyword" id="searchInput" value="<% if(typeof searchKeywords !== 'undefined'){%><%=searchKeywords%><%}%>" type="text" class="form-control" placeholder="Search..." style="border-left: 0px;
+                    color:white; background-color: #212529;">
+                <!-- To use Enter from KeyBoard -->
+                <button id="submit_search" style="display: none;">Hidden Button for Search</button>
+              </form>
+              <script>
+                spliter = window.location.pathname.split(/\//);
+                document.getElementById('searchOption').setAttribute("action", spliter[spliter.length - 1]);
+              </script>
+            </div>
+          </li>
         </ul>
         <% if(typeof userData=='undefined' ){%>
           <div class="text-end">
@@ -170,7 +166,7 @@
              <div class="text-success"><i class="fas fa-check-circle"></i> Upload Complete</div>
              <div class="text-truncate">${notification.fileName}</div>
              <div class="mt-1">
-               <a href="/comic/${notification.comicFolderId}/${notification.comicId}" class="btn btn-xs btn-outline-light" style="font-size: 10px;">View Comic</a>
+               <a href="/comic/${notification.comicFolderId}/${notification.comicId}" class="btn btn-xs btn-outline-light" style="font-size: 10px;">Review Details</a>
              </div>
              <div class="text-muted" style="font-size: 10px;">${new Date(notification.timestamp).toLocaleString()}</div>
            `;
@@ -207,12 +203,12 @@
               const statusResponse = await fetch(`/ajax/upload/status/${jobId}`);
               if (statusResponse.ok) {
                 const statusData = await statusResponse.json();
-                const job = data.jobs.find(j => j.jobId === jobId) || { fileName: 'Unknown file' };
+                const job = data.jobs.find(j => j.jobId === jobId) || { fileName: statusData.fileName || 'Unknown file' };
 
                 if (statusData.status === 'completed') {
                   addCompletedNotification(
                     jobId,
-                    job.fileName,
+                    statusData.fileName || job.fileName,
                     statusData.comicId,
                     statusData.comicFolderId,
                     true
@@ -220,7 +216,7 @@
                 } else if (statusData.status === 'failed') {
                   addCompletedNotification(
                     jobId,
-                    job.fileName,
+                    statusData.fileName || job.fileName,
                     null,
                     null,
                     false,
@@ -259,21 +255,22 @@
       console.log('Test notification added');
     }
 
-   // Initialize notification UI and start periodic checking
-   <% if (typeof userData != 'undefined') {%>
-      document.addEventListener('DOMContentLoaded', function () {
-        console.log('Initializing notification system...');
-        updateNotificationUI();
+    // Initialize notification UI and start periodic checking
+    document.addEventListener('DOMContentLoaded', function () {
+      if (document.body.dataset.userAuthenticated !== 'true') {
+        return;
+      }
+      console.log('Initializing notification system...');
+      updateNotificationUI();
 
-        // Get initial active jobs
-        checkActiveJobs();
+      // Get initial active jobs
+      checkActiveJobs();
 
-        // Check active jobs every 15 seconds
-        setInterval(checkActiveJobs, 15000);
+      // Check active jobs every 15 seconds
+      setInterval(checkActiveJobs, 15000);
 
-        // Make test function globally available for debugging
-        window.testNotification = testNotification;
-        console.log('Notification system initialized. Try: testNotification() in console');
-      });
-   <% } %>
+      // Make test function globally available for debugging
+      window.testNotification = testNotification;
+      console.log('Notification system initialized. Try: testNotification() in console');
+    });
   </script>

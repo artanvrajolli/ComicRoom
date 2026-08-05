@@ -5,21 +5,86 @@
                 <div class="alert alert-warning"><%=msg%></div>
             <% } %>
         </div>
-    <div class="row col-12">
-        <div class="col-12 d-flex justify-content-center">
-    <form method="post" class="mt-4 col-md-5">
-        <input class="mt-2 form-control" type="text" name="title" placeholder="title">
-
-            <input  class="mt-2 form-control" type="text" name="author" id="authortext" placeholder="author">
-
-        <div class="mt-2 form-floating">
-            <textarea name="description" class="form-control" placeholder="" id="floatingTextarea2" "></textarea>
-            <label  class="text-dark" for="floatingTextarea2">Description</label>
+    <div class="row g-4 col-12 mx-0">
+        <div class="col-12 col-lg-5 d-flex justify-content-center">
+            <div class="card bg-dark text-white border-secondary w-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                        <h3 class="mb-0">Owner Edit Panel</h3>
+                        <a class="btn btn-outline-light btn-sm" href="/comic/show/<%= comic.id %>">Open Comic</a>
+                    </div>
+                    <div class="mb-3 text-start text-muted">
+                        <div>Folder: <span class="text-white"><%= comic.savedFolder %></span></div>
+                        <div>Pages: <span class="text-white"><%= comic.totalPages || 0 %></span></div>
+                    </div>
+                    <form method="post" class="mt-2">
+                        <input class="mt-2 form-control" type="text" name="title" placeholder="title" value="<%= comic.title || '' %>">
+                        <input class="mt-2 form-control" type="text" name="author" id="authortext" placeholder="author" value="<%= comic.author || '' %>">
+                        <div class="mt-2 form-floating">
+                            <textarea name="description" class="form-control" placeholder="" id="floatingTextarea2" style="height: 180px;"><%= comic.description || '' %></textarea>
+                            <label class="text-dark" for="floatingTextarea2">Description</label>
+                        </div>
+                        <input class="mt-3 btn btn-secondary w-100" type="submit" value="Save Details" name="submit">
+                    </form>
+                </div>
+            </div>
         </div>
-
-        <input class="mt-2 btn btn-secondary" type="submit" value="Finish" name="submit">
-    </form>
-</div>
-</div>
+        <div class="col-12 col-lg-7">
+            <div class="card bg-dark text-white border-secondary mb-4">
+                <div class="card-body text-start">
+                    <h4 class="mb-3">Pages</h4>
+                    <% if(viewerType !== 'image'){ %>
+                        <div class="alert alert-secondary mb-0">Page management is currently available only for image-based comics. PDF uploads can still be edited for title, author, and description.</div>
+                    <% }else{ %>
+                        <form method="post" action="/comic/<%= comic.savedFolder %>/<%= comic.id %>/pages/add" enctype="multipart/form-data" class="row g-3 align-items-end">
+                            <div class="col-12 col-md-7">
+                                <label class="form-label">Add new pages</label>
+                                <input class="form-control" type="file" name="pageFiles" accept=".jpg,.jpeg,.png,.webp,.gif,.svg,.avif,.apng" multiple required>
+                            </div>
+                            <div class="col-12 col-md-3">
+                                <label class="form-label">Insert after</label>
+                                <input class="form-control" type="number" name="insertAfter" min="0" max="<%= comicPages.length %>" value="<%= comicPages.length %>">
+                                <div class="form-text text-light">Use `0` for the beginning or any page number up to <%= comicPages.length %>.</div>
+                            </div>
+                            <div class="col-12 col-md-2 d-grid">
+                                <button class="btn btn-warning" type="submit">Add</button>
+                            </div>
+                        </form>
+                    <% } %>
+                </div>
+            </div>
+            <% if(viewerType === 'image'){ %>
+                <div class="row g-3">
+                    <% comicPages.forEach((page)=>{ %>
+                        <div class="col-12 col-xl-6">
+                            <div class="card bg-dark text-white border-secondary h-100">
+                                <img class="card-img-top" src="/public/uploads/<%= comic.savedFolder %>/<%- page.relativePath.split('/').map(encodeURIComponent).join('/') %>" loading="lazy" decoding="async" fetchpriority="low" alt="Page <%= page.number %>" style="height: 260px; object-fit: contain; background-color: #111;">
+                                <div class="card-body text-start d-flex flex-column gap-3">
+                                    <div>
+                                        <div class="fw-bold">Page <%= page.number %></div>
+                                        <div class="small text-muted" style="word-break: break-all;"><%= page.relativePath %></div>
+                                    </div>
+                                    <form method="post" action="/comic/<%= comic.savedFolder %>/<%= comic.id %>/pages/move" class="row g-2 align-items-end">
+                                        <input type="hidden" name="pageNumber" value="<%= page.number %>">
+                                        <div class="col-8">
+                                            <label class="form-label mb-1">Move to position</label>
+                                            <input class="form-control form-control-sm" type="number" name="targetPageNumber" min="1" max="<%= comicPages.length %>" value="<%= page.number %>">
+                                        </div>
+                                        <div class="col-4 d-grid">
+                                            <button class="btn btn-outline-light btn-sm" type="submit">Move</button>
+                                        </div>
+                                    </form>
+                                    <form method="post" action="/comic/<%= comic.savedFolder %>/<%= comic.id %>/pages/delete" class="d-grid">
+                                        <input type="hidden" name="pageNumber" value="<%= page.number %>">
+                                        <button class="btn btn-outline-danger btn-sm" type="submit" <%= comicPages.length <= 1 ? 'disabled' : '' %>>Remove page</button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    <% }) %>
+                </div>
+            <% } %>
+        </div>
+    </div>
 </div>
 <%- include("footer") %>

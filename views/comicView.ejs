@@ -3,17 +3,125 @@
 <head>
     <%-include("head_tags")%>
     <title>ComicRoom - <%=comic_Field.title%></title>
+    <style>
+        html, body {
+            min-height: 100%;
+            background-color: #111;
+        }
+
+        .reader-overlay {
+            position: fixed;
+            z-index: 5;
+        }
+
+        .reader-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            padding: 6px 10px;
+            border-radius: 10px;
+            background-color: rgba(36, 36, 36, 0.55);
+        }
+
+        .reader-mode-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 84px;
+            padding: 6px 10px;
+            border: 1px solid rgba(255,255,255,0.18);
+            border-radius: 999px;
+            color: #d3d3d3;
+            background-color: rgba(255,255,255,0.05);
+            font-size: 13px;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .reader-mode-button.active {
+            color: #111;
+            background-color: #f8f9fa;
+            border-color: #f8f9fa;
+        }
+
+        .paged-reader-shell {
+            height: 100vh;
+            position: relative;
+        }
+
+        .reader-side-trigger {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 50%;
+            z-index: 3;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            transition: background-color 0.15s ease-in-out;
+        }
+
+        .reader-side-trigger i {
+            font-size: 40px;
+            color: rgba(255, 255, 255, 0.45);
+        }
+
+        #leftTrigger {
+            left: 0;
+            justify-content: flex-start;
+            padding-left: 12px;
+        }
+
+        #rightTrigger {
+            right: 0;
+            justify-content: flex-end;
+            padding-right: 12px;
+        }
+
+        .reader-side-trigger:hover {
+            background-color: rgba(255,255,255,0.03);
+        }
+
+        #scrollReader {
+            display: none;
+            padding-top: 72px;
+            padding-bottom: 24px;
+        }
+
+        .scroll-page {
+            max-width: 1100px;
+            margin: 0 auto 18px auto;
+            display: flex;
+            justify-content: center;
+        }
+
+        .scroll-page img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            background-color: #111;
+        }
+    </style>
 </head>
-    <body class="h-100 text-white bg-dark" >
-        <div class="d-flex" style="z-index:2;position: absolute;font-size:30px;opacity: 0.2;left:4px;top:4px;">
+    <body class="h-100 text-white bg-dark" data-comic-images="<%- encodeURIComponent(JSON.stringify(comicImages)) %>" data-comic-id="<%=comic_Field.id%>" data-comic-folder="<%-savedFolder%>" data-page-number="<%=pageNumber%>">
+        <div class="reader-overlay d-flex" style="font-size:30px;opacity: 0.65;left:4px;top:4px;">
             <b style="font-size: 25px;margin-right: 10px;">
                 <a id="currentPage">999</a>/<a id="totalPage">999</a>
             </b>
         </div>
-        <div class="d-flex" style="background-color: rgb(36, 36, 36,0.2);z-index:2;position: absolute;font-size:30px;right:5px;top:4px;">
+        <div class="reader-overlay d-flex" style="font-size:30px;right:5px;top:4px;">
+            <div class="reader-toolbar">
+                <a id="pagedModeButton" class="reader-mode-button active">Paged</a>
+                <a id="scrollModeButton" class="reader-mode-button">Scroll</a>
             <a id="backToStart" style="font-size: 30px;cursor: pointer;display: none;">
                 <i class="mx-2 fas fa-undo-alt"></i>
             </a>
+            <% if(canEditComic){ %>
+            <a href="/comic/<%= comic_Field.savedFolder %>/<%= comic_Field.id %>" style="font-size: 30px;cursor: pointer;color: rgb(134 134 134 / 0.7);">
+                <i class="mx-2 fas fa-edit"></i>
+            </a>
+            <% } %>
             <a id="fullScreen_icon" style="font-size: 30px;cursor: pointer;color: rgb(134 134 134 / 0.7);">
                 <i class="mx-2 fas fa-expand"></i>
             </a>
@@ -24,21 +132,29 @@
             <a id="backToComics" style="font-size: 30px;cursor: pointer;color: rgb(134 134 134 / 0.7);">
              <i class="mx-2 fas fa-times"></i>
             </a>
+            </div>
         </div>
 
-        <div class="container d-flex justify-content-center align-items-center" style="height:100vh;position: relative;">
+        <div id="pagedReader" class="container d-flex justify-content-center align-items-center paged-reader-shell">
 
-            <div class="d-flex" id="leftTrigger">
+            <div class="reader-side-trigger" id="leftTrigger">
                 <i style="cursor: pointer;" class="fas fa-arrow-circle-left align-self-center"></i>
             </div>
             <!-- transform: scale3d(1, 1, 1); -->
             <img onload="cacheNextImage()" style="position: absolute;max-width: 100%;max-height: 100%;image-rendering: auto;" class="img-fluid" id="mainImage" src="">
 
             <img id="cachedImage" src="" style="height: 1px; width:1px;" />
-            <div class="d-flex" id="rightTrigger">
+            <div class="reader-side-trigger" id="rightTrigger">
                 <i style="cursor: pointer;" class="fas fa-arrow-circle-right align-self-center"></i>
             </div>
 
+        </div>
+        <div id="scrollReader" class="container-fluid">
+            <% comicImages.forEach((comicImage, index)=>{ %>
+                <div class="scroll-page" data-page-index="<%= index %>">
+                    <img class="scroll-page-image img-fluid" src="/public/uploads/<%= comic_Field.savedFolder %>/<%- comicImage.split('/').map(encodeURIComponent).join('/') %>" loading="lazy" decoding="async" fetchpriority="low" alt="Page <%= index + 1 %>">
+                </div>
+            <% }) %>
         </div>
         <div id="infoComic" class="d-flex">
             <div class="px-3 align-self-center">
@@ -59,21 +175,5 @@
             </div>
         </div>
     </body>
-<script type="text/javascript">
-// comicImages 
-var comicImages = [<%-comicImages.join(",")%>];
-var comicId = <%=comic_Field.id%>;
-var comicImagesLength = comicImages.length;
-// comicFolder
-var comicFolder = "<%-savedFolder%>";
-var mainImage = document.getElementById("mainImage");
-var lastTime = parseInt("<%=pageNumber%>");
-if(typeof window.localStorage[comicFolder] != "undefined" && lastTime == 0){
-    lastTime = parseInt(window.localStorage[comicFolder]);
-    if(lastTime > comicImagesLength){
-        lastTime = 0;
-    }
-}
-</script>
-<script src="/public/script/viewComic.js"></script>
+<script src="/public/script/viewComic.js?v=20260328b"></script>
 </html>

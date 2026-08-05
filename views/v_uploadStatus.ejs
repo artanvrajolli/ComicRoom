@@ -65,7 +65,7 @@
 </style>
 
 <div class="container content_c mt-3">
-    <div class="status-container">
+    <div class="status-container" data-job-id="<%=job.jobId%>" data-current-status="<%=job.status%>" data-current-progress="<%=job.progress%>" data-comic-id="<%=job.comicId || ''%>" data-comic-folder-id="<%=job.comicFolderId || ''%>">
         <% if(typeof msg != 'undefined' && msg != ""){ %>
         <div class="alert alert-info text-center"><%=msg%></div>
         <%}%>
@@ -87,8 +87,8 @@
             </div>
 
             <div class="progress-bar-container">
-                <div id="progressBar" class="progress-bar bg-success" style="width: <%=job.progress%>%;">
-                    <span id="progressText"><%=job.progress%>%</span>
+                <div id="progressBar" class="progress-bar bg-success" style="width: 0%;">
+                    <span id="progressText">0%</span>
                 </div>
             </div>
 
@@ -110,19 +110,23 @@
 
             <div id="redirectInfo" class="mt-3" style="display: none;">
                 <p class="text-success">Comic processed successfully!</p>
-                <p>Redirecting to your comic in <span id="countdown">3</span> seconds...</p>
+                <p>Redirecting to comic details in <span id="countdown">5</span> seconds...</p>
             </div>
 
-            <a id="btnRedirect" href="#" class="btn btn-success btn-redirect">View Your Comic</a>
+            <a id="btnRedirect" href="#" class="btn btn-success btn-redirect">Review Comic Details</a>
             <a href="/comic" class="btn btn-secondary mt-3">Back to Gallery</a>
         </div>
     </div>
 </div>
 
 <script>
-let jobId = '<%=job.jobId%>';
-let currentStatus = '<%=job.status%>';
+const statusContainer = document.querySelector('.status-container');
+let jobId = statusContainer.dataset.jobId;
+let currentStatus = statusContainer.dataset.currentStatus;
 let isPolling = false;
+
+document.getElementById('progressBar').style.width = `${statusContainer.dataset.currentProgress}%`;
+document.getElementById('progressText').textContent = `${statusContainer.dataset.currentProgress}%`;
 
 function updateStatus() {
     if (isPolling) return; // Prevent multiple simultaneous requests
@@ -253,9 +257,9 @@ console.log('Initial status:', currentStatus);
 
 if (currentStatus === 'completed') {
     document.getElementById('progressCircle').className = 'progress-circle completed';
-    <% if(job.comicId && job.comicFolderId) { %>
-    showRedirectInfo('<%=job.comicFolderId%>', <%=job.comicId%>);
-    <% } %>
+    if (statusContainer.dataset.comicId && statusContainer.dataset.comicFolderId) {
+        showRedirectInfo(statusContainer.dataset.comicFolderId, statusContainer.dataset.comicId);
+    }
 } else if (currentStatus === 'failed') {
     document.getElementById('progressCircle').className = 'progress-circle failed';
 } else {

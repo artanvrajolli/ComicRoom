@@ -6,7 +6,7 @@ const lastPage_table = require('../model/m_lastPage');
 const crypto = require('crypto');
 const jobProcessor = require('../utils/jobProcessor');
 const UploadJob = require('../model/m_uploadJob');
-
+const { ALLOWED_UPLOAD_EXTENSIONS, isSupportedComicImageFile, listComicPages, rebuildComicImagePages, resolveComicAssets, sanitizeUploadFileName } = require('../utils/comicStorage');
 
 function checkIfisOnline(req,res,next){
     if(typeof req.session.userData == 'undefined'){
@@ -15,6 +15,15 @@ function checkIfisOnline(req,res,next){
         return;
     }
     next();
+}
+
+function getUploadInfo(fileName) {
+    const safeFileName = sanitizeUploadFileName(fileName);
+    const extension = safeFileName.includes('.') ? safeFileName.split('.').pop().toLowerCase() : "";
+    return {
+        safeFileName,
+        extension
+    };
 }
 
 const PostComicUpload = async (req,res)=>{
@@ -47,11 +56,10 @@ const PostComicUpload = async (req,res)=>{
         size: req.files.fileComicUpload.size,
         tempFilePath: req.files.fileComicUpload.tempFilePath
     });
-    
-    var extension = req.files.fileComicUpload.name.split(".").pop().toLowerCase();
-    if(!["cbz","cbr"].includes(extension)){
-        console.log('Invalid file extension:', extension);
-        req.session.msg = "Extension should be .cbz or .cbr";
+    const uploadInfo = getUploadInfo(req.files.fileComicUpload.name);
+    if(!ALLOWED_UPLOAD_EXTENSIONS.includes(uploadInfo.extension)){
+        console.log('Invalid file extension:', uploadInfo.extension);
+        req.session.msg = "Extension should be .cbz, .cbr or .pdf";
         res.redirect("/comic/upload")
         return;
     }
@@ -63,15 +71,15 @@ const PostComicUpload = async (req,res)=>{
         const job = await jobProcessor.addJob({
             userId: req.session.userData.id,
             comicFolderId: comicFolder_Id,
-            fileName: req.files.fileComicUpload.name,
+            fileName: uploadInfo.safeFileName,
             tempFilePath: req.files.fileComicUpload.tempFilePath,
-            extension: extension
+            extension: uploadInfo.extension
         });
         
         console.log('Job created successfully:', job.jobId);
         req.session.msg = "Upload started! Your comic is being processed. You will be redirected when ready.";
         req.session.uploadJobId = job.jobId; // Store job ID in session for notification tracking
-        req.session.uploadFileName = req.files.fileComicUpload.name;
+        req.session.uploadFileName = uploadInfo.safeFileName;
         res.redirect("/comic/status/" + job.jobId);
     } catch (error) {
         console.error('Error starting upload job:', error);
@@ -81,31 +89,208 @@ const PostComicUpload = async (req,res)=>{
 }
 
 function findMainFolderImages(fileOrDir){
-
-    if(fileOrDir.match(/\.(?:APNG|AVIF|GIF|JPEG|PNG|SVG|WebP|JPG)$/i)){
-        const str = fileOrDir;
-        const words = str.split(/\/|\\/);
-        words.pop();
-        return words.join("/").split("uploads/")[1];
+    const savedFolder = String(fileOrDir || "").split("uploads/")[1] || "";
+    const assets = resolveComicAssets(savedFolder);
+    if(assets.viewerType === 'image' || assets.viewerType === 'pdf'){
+        return savedFolder;
     }
-    if(fs.lstatSync(process.cwd()+fileOrDir).isDirectory()){
-        var files = fs.readdirSync(process.cwd()+fileOrDir);
-        for(var i=0;i<files.length;i++){
-            if(findMainFolderImages(fileOrDir+"/"+files[i]) != ""){
-                return (fileOrDir+"/"+files[i]).split("uploads/")[1];
-            }
-        }
-    }
-
     return "";
-    
 }
-const getUpdateComicDetails = (req,res)=>{
+
+const findOwnedComic = async (req)=>{
+    if(typeof req.session.userData == 'undefined'){
+        return null;
+    }
+    return comic_table.findOne({
+        where: {
+            id: req.params.id_db,
+            uid: req.session.userData.id,
+            savedFolder: req.params.folderID
+        }
+    });
+}
+
+const updateComicAssetMetadata = async (comic)=>{
+    const comicAssets = resolveComicAssets(comic.savedFolder);
+    await comic_table.update({
+        coverImage: comicAssets.coverImage,
+        totalPages: comicAssets.totalPages
+     }, {
+     where: {
+         id:comic.id,
+         uid: comic.uid
+     }
+     });
+    comic.coverImage = comicAssets.coverImage;
+    comic.totalPages = comicAssets.totalPages;
+    return comicAssets;
+}
+
+const getEditablePageEntries = (savedFolder)=>{
+    return listComicPages(savedFolder).map((page)=>({
+        type: 'existing',
+        relativePath: page.relativePath,
+        fileName: page.fileName
+    }));
+}
+
+const normalizePageUploadFiles = (pageFiles)=>{
+    if(typeof pageFiles == 'undefined' || pageFiles == null){
+        return [];
+    }
+    if(Array.isArray(pageFiles)){
+        return pageFiles.filter(Boolean);
+    }
+    return [pageFiles];
+}
+
+const updateComicDetailsRedirect = (comic)=>`/comic/${comic.savedFolder}/${comic.id}`;
+
+const addComicPages = async (req,res)=>{
+    try{
+        const comic = await findOwnedComic(req);
+        if(!comic){
+            req.session.msg = "Comic details could not be found.";
+            res.redirect("/comic");
+            return;
+        }
+
+        const comicAssets = resolveComicAssets(comic.savedFolder);
+        if(comicAssets.viewerType !== 'image'){
+            req.session.msg = "Page management is available only for image-based comics.";
+            res.redirect(updateComicDetailsRedirect(comic));
+            return;
+        }
+
+        const uploadedFiles = normalizePageUploadFiles(req.files?.pageFiles);
+        if(uploadedFiles.length === 0){
+            req.session.msg = "Select at least one image page to upload.";
+            res.redirect(updateComicDetailsRedirect(comic));
+            return;
+        }
+
+        const hasUnsupportedFile = uploadedFiles.some((file)=>!isSupportedComicImageFile(file.name));
+        if(hasUnsupportedFile){
+            req.session.msg = "Only image files can be added as comic pages.";
+            res.redirect(updateComicDetailsRedirect(comic));
+            return;
+        }
+
+        const currentPages = getEditablePageEntries(comic.savedFolder);
+        const insertAfter = Number.parseInt(req.body.insertAfter,10);
+        const safeInsertAfter = Number.isInteger(insertAfter) && insertAfter >= 0 && insertAfter <= currentPages.length ? insertAfter : currentPages.length;
+        const uploadedPages = uploadedFiles.map((file)=>({
+            type: 'upload',
+            fileName: file.name,
+            tempFilePath: file.tempFilePath
+        }));
+        const nextPages = [
+            ...currentPages.slice(0, safeInsertAfter),
+            ...uploadedPages,
+            ...currentPages.slice(safeInsertAfter)
+        ];
+
+        rebuildComicImagePages(comic.savedFolder, nextPages);
+        await updateComicAssetMetadata(comic);
+
+        req.session.msg = `${uploadedPages.length} page${uploadedPages.length === 1 ? '' : 's'} added successfully.`;
+        res.redirect(updateComicDetailsRedirect(comic));
+    }catch(error){
+        console.error('Error adding comic pages:', error);
+        req.session.msg = "Unable to add the selected pages.";
+        res.redirect(`/comic/${req.params.folderID}/${req.params.id_db}`);
+    }
+}
+
+const deleteComicPage = async (req,res)=>{
+    try{
+        const comic = await findOwnedComic(req);
+        if(!comic){
+            req.session.msg = "Comic details could not be found.";
+            res.redirect("/comic");
+            return;
+        }
+
+        const currentPages = getEditablePageEntries(comic.savedFolder);
+        if(currentPages.length <= 1){
+            req.session.msg = "At least one page must remain in the comic.";
+            res.redirect(updateComicDetailsRedirect(comic));
+            return;
+        }
+
+        const pageNumber = Number.parseInt(req.body.pageNumber,10);
+        if(!Number.isInteger(pageNumber) || pageNumber < 1 || pageNumber > currentPages.length){
+            req.session.msg = "Invalid page selected for removal.";
+            res.redirect(updateComicDetailsRedirect(comic));
+            return;
+        }
+
+        const nextPages = currentPages.filter((page, index)=>index !== (pageNumber - 1));
+        rebuildComicImagePages(comic.savedFolder, nextPages);
+        await updateComicAssetMetadata(comic);
+
+        req.session.msg = `Page ${pageNumber} removed successfully.`;
+        res.redirect(updateComicDetailsRedirect(comic));
+    }catch(error){
+        console.error('Error deleting comic page:', error);
+        req.session.msg = "Unable to remove the selected page.";
+        res.redirect(`/comic/${req.params.folderID}/${req.params.id_db}`);
+    }
+}
+
+const moveComicPage = async (req,res)=>{
+    try{
+        const comic = await findOwnedComic(req);
+        if(!comic){
+            req.session.msg = "Comic details could not be found.";
+            res.redirect("/comic");
+            return;
+        }
+
+        const currentPages = getEditablePageEntries(comic.savedFolder);
+        const pageNumber = Number.parseInt(req.body.pageNumber,10);
+        const targetPageNumber = Number.parseInt(req.body.targetPageNumber,10);
+        if(!Number.isInteger(pageNumber) || !Number.isInteger(targetPageNumber) || pageNumber < 1 || targetPageNumber < 1 || pageNumber > currentPages.length || targetPageNumber > currentPages.length){
+            req.session.msg = "Invalid page move request.";
+            res.redirect(updateComicDetailsRedirect(comic));
+            return;
+        }
+
+        if(pageNumber === targetPageNumber){
+            res.redirect(updateComicDetailsRedirect(comic));
+            return;
+        }
+
+        const nextPages = [...currentPages];
+        const [movedPage] = nextPages.splice(pageNumber - 1, 1);
+        nextPages.splice(targetPageNumber - 1, 0, movedPage);
+        rebuildComicImagePages(comic.savedFolder, nextPages);
+        await updateComicAssetMetadata(comic);
+
+        req.session.msg = `Page ${pageNumber} moved to position ${targetPageNumber}.`;
+        res.redirect(updateComicDetailsRedirect(comic));
+    }catch(error){
+        console.error('Error moving comic page:', error);
+        req.session.msg = "Unable to move the selected page.";
+        res.redirect(`/comic/${req.params.folderID}/${req.params.id_db}`);
+    }
+}
+
+const getUpdateComicDetails = async (req,res)=>{
     req.session.myComic = crypto.createHash('md5').update(req.params.folderID+"|"+req.params.id_db).digest("hex");
     var msg = req.session.msg;
     req.session.msg = "";
-    res.render("v_comicDetails",{  userData: req.session.userData,msg});
+    const comic = await findOwnedComic(req);
+    if(!comic){
+        req.session.msg = "Comic details could not be found.";
+        res.redirect("/comic");
+        return;
+    }
+    const comicAssets = await updateComicAssetMetadata(comic);
+    const comicPages = listComicPages(comic.savedFolder);
+    res.render("v_comicDetails",{  userData: req.session.userData,msg, comic, comicPages, viewerType: comicAssets.viewerType});
 }
+
 const UpdateComicDetails =async (req,res)=>{
     var comic_folder_id = req.params.folderID;
     var comic_id = req.params.id_db;
@@ -120,25 +305,19 @@ const UpdateComicDetails =async (req,res)=>{
         return;
     }
 
-    MainFolderCheck = findMainFolderImages("/public/uploads/"+comic_folder_id);
-    
-    if(MainFolderCheck.match(/(?:APNG|AVIF|GIF|JPEG|PNG|SVG|WebP|JPG)$/i) == null){
-        comic_folder_id = MainFolderCheck;
-        
+    const comicAssets = resolveComicAssets(comic_folder_id);
+    if(comicAssets.viewerType !== 'image' && comicAssets.viewerType !== 'pdf'){
+        req.session.msg = "No supported content was found for this upload.";
+        res.redirect("/comic/"+comic_folder_id+"/"+comic_id);
+        return;
     }
-    
-    var part_file = fs.readdirSync(process.cwd()+"/public/uploads/"+comic_folder_id).filter(item => {
-    const regex = /(?:APNG|AVIF|GIF|JPEG|PNG|SVG|WebP|JPG)$/i;
-    return item.match(regex) == null ? false : true;
-    });
-    // fs.lstatSync(part_file[0]).isDirectory() 
 
     await comic_table.update({
-        coverImage: part_file[0],
-        totalPages: part_file.length,
+        coverImage: comicAssets.coverImage,
+        totalPages: comicAssets.totalPages,
         title:req.body.title,
-        author:req.body.author,
-        description:req.body.description,
+        author:req.body.author || "",
+        description:req.body.description || "",
         savedFolder:comic_folder_id
      }, {
      where: {
@@ -159,16 +338,31 @@ const showcomic_id = async (req,res)=>{
             id:comic_id
         }
     }).then(async (data)=>{
-        var images_file = fs.readdirSync(process.cwd()+"/public/uploads/"+data.savedFolder).filter(item => {
-        const regex = /(?:APNG|AVIF|GIF|JPEG|PNG|SVG|WebP|JPG)$/i;
-        return item.match(regex) == null ? false : true;
-        }).map((item)=> "\'"+escape(item)+"\'");
+        if(!data){
+            res.status(404);
+            res.render("v_404", {
+                msg: "Comic not found",
+                userData: req.session.userData
+            });
+            return;
+        }
+        const comicAssets = resolveComicAssets(data.savedFolder);
         if(typeof req.session.userData != 'undefined'){
             var pageNumber = await fetchPage(comic_id,req.session.userData.id);
         }else{
             var pageNumber = 0;
         }
-        res.render("comicView",{ userData:req.session.userData , comicImages:images_file , savedFolder:data.savedFolder,comicTitle:data.title,comic_Field:data,pageNumber: pageNumber})
+        const canEditComic = typeof req.session.userData != 'undefined' && req.session.userData.id === data.uid;
+        if(comicAssets.viewerType === 'pdf' && comicAssets.pdfFile){
+            res.render("pdfView",{ userData:req.session.userData , savedFolder:data.savedFolder, pdfFile: comicAssets.pdfFile, comicTitle:data.title,comic_Field:data, canEditComic})
+            return;
+        }
+        if(comicAssets.viewerType !== 'image' || comicAssets.images.length === 0){
+            req.session.msg = "This upload does not contain any supported pages.";
+            res.redirect("/comic");
+            return;
+        }
+        res.render("comicView",{ userData:req.session.userData , comicImages:comicAssets.images , savedFolder:data.savedFolder,comicTitle:data.title,comic_Field:data,pageNumber: pageNumber, canEditComic})
     }).catch((err)=>{
         console.log(err);
     })
@@ -287,7 +481,8 @@ const getUploadStatusAPI = async (req, res) => {
             progress: job.progress,
             comicId: job.comicId,
             comicFolderId: job.comicFolderId,
-            errorMessage: job.errorMessage
+            errorMessage: job.errorMessage,
+            fileName: job.fileName
         };
         
         console.log(`API: Returning status for job ${jobId}:`, response);
@@ -311,7 +506,9 @@ const getActiveJobs = async (req, res) => {
         const activeJobs = await UploadJob.findAll({
             where: {
                 userId: req.session.userData.id,
-                status: ['pending', 'processing']
+                status: {
+                    [Op.in]: ['pending', 'processing']
+                }
             },
             attributes: ['jobId', 'fileName', 'status', 'progress', 'createdAt']
         });
@@ -346,9 +543,9 @@ const PostChunkedUpload = async (req, res) => {
         }
 
         // Validate file extension
-        const extension = fileName.split(".").pop().toLowerCase();
-        if (!["cbz", "cbr"].includes(extension)) {
-            return res.status(400).json({ error: "Only .cbz and .cbr files are allowed" });
+        const uploadInfo = getUploadInfo(fileName);
+        if (!ALLOWED_UPLOAD_EXTENSIONS.includes(uploadInfo.extension)) {
+            return res.status(400).json({ error: "Only .cbz, .cbr and .pdf files are allowed" });
         }
 
         // Create chunks directory if it doesn't exist
@@ -369,7 +566,7 @@ const PostChunkedUpload = async (req, res) => {
             console.log(`All chunks received for upload ${uploadId}, assembling file...`);
 
             // Assemble the file
-            const finalFilePath = process.cwd() + `/public/tmp/${uploadId}_${fileName}`;
+            const finalFilePath = process.cwd() + `/public/tmp/${uploadId}_${uploadInfo.safeFileName}`;
             const writeStream = fs.createWriteStream(finalFilePath);
 
             for (let i = 0; i < totalChunks; i++) {
@@ -397,9 +594,9 @@ const PostChunkedUpload = async (req, res) => {
             const job = await jobProcessor.addJob({
                 userId: req.session.userData.id,
                 comicFolderId: comicFolderId,
-                fileName: fileName,
+                fileName: uploadInfo.safeFileName,
                 tempFilePath: finalFilePath,
-                extension: extension
+                extension: uploadInfo.extension
             });
 
             return res.json({
@@ -423,8 +620,11 @@ const PostChunkedUpload = async (req, res) => {
 };
 
 module.exports = {  
+    addComicPages,
+    deleteComicPage,
     PostComicUpload, 
     findMainFolderImages, 
+    moveComicPage,
     UpdateComicDetails,
     showcomic_id,
     showgallery_comic,

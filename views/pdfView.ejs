@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <%-include("head_tags")%>
+    <title>ComicRoom - <%=comicTitle%></title>
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            background-color: #111;
+            color: white;
+        }
+
+        .viewer-shell {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .viewer-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            padding: 12px 18px;
+            background-color: rgba(18, 18, 18, 0.95);
+            border-bottom: 1px solid #2f2f2f;
+            flex-wrap: wrap;
+        }
+
+        .viewer-toolbar a {
+            color: white;
+            text-decoration: none;
+            margin-right: 14px;
+        }
+
+        .viewer-toolbar a:last-child {
+            margin-right: 0;
+        }
+
+        .viewer-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .viewer-meta {
+            font-size: 13px;
+            opacity: 0.75;
+        }
+
+        .viewer-frame {
+            flex: 1;
+            width: 100%;
+            border: 0;
+            background-color: #1b1b1b;
+        }
+    </style>
+</head>
+<body>
+    <div class="viewer-shell">
+        <div class="viewer-toolbar">
+            <div>
+                <a href="/comic"><i class="fas fa-arrow-left"></i> Gallery</a>
+                <% if(canEditComic){ %>
+                    <a href="/comic/<%=comic_Field.savedFolder%>/<%=comic_Field.id%>"><i class="fas fa-edit"></i> Edit Details</a>
+                <% } %>
+            </div>
+            <div>
+                <div class="viewer-title"><%=comicTitle%></div>
+                <div class="viewer-meta">
+                    <% if(comic_Field.author){ %>
+                        <span><%=comic_Field.author%></span>
+                    <% }else{ %>
+                        <span>PDF upload</span>
+                    <% } %>
+                </div>
+            </div>
+        </div>
+        <iframe class="viewer-frame" src="/public/uploads/<%-savedFolder%>/<%- pdfFile.split('/').map(encodeURIComponent).join('/') %>#toolbar=1&navpanes=0"></iframe>
+    </div>
+</body>
+</html>

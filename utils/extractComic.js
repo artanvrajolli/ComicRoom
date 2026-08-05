@@ -27,7 +27,7 @@ function isValidZipFile(filename) {
 
 async function extractComics(filename,extension,pathOutput = ""){
   try{
-    fs.mkdirSync(process.cwd()+'/public/uploads/'+pathOutput)
+    fs.mkdirSync(process.cwd()+'/public/uploads/'+pathOutput, { recursive: true })
   }catch(err){}
     if(extension == "cbz"){
         return new Promise((resolve, reject) => {
@@ -86,6 +86,52 @@ async function extractComics(filename,extension,pathOutput = ""){
             } else {
               reject(new Error(`ZIP extraction failed: ${error.message}`));
             }
+          }
+        });
+    }else if(extension == "pdf"){
+        return new Promise(async (resolve, reject) => {
+          try {
+            const outputPath = process.cwd()+'/public/uploads/'+pathOutput;
+            const { pdfToImg } = await import('pdftoimg-js');
+            const convertedImages = await pdfToImg(filename, {
+              pages: 'all',
+              imgType: 'png',
+              scale: 2,
+              background: 'white'
+            });
+
+            const imagePages = Array.isArray(convertedImages) ? convertedImages : [convertedImages];
+
+            if (imagePages.length === 0) {
+              reject(new Error('PDF conversion did not produce any image pages.'));
+              return;
+            }
+
+            imagePages.forEach((imagePage, index) => {
+              const pageData = typeof imagePage === 'string'
+                ? imagePage
+                : imagePage && typeof imagePage.dataUrl === 'string'
+                  ? imagePage.dataUrl
+                  : imagePage && typeof imagePage.src === 'string'
+                    ? imagePage.src
+                    : imagePage && typeof imagePage.base64 === 'string'
+                      ? imagePage.base64
+                      : '';
+
+              if (!pageData) {
+                throw new Error(`PDF page ${index + 1} did not return image data.`);
+              }
+
+              const base64Content = pageData.includes(',') ? pageData.split(',')[1] : pageData;
+              const imageBuffer = Buffer.from(base64Content, 'base64');
+              const outputFileName = `page_${String(index + 1).padStart(4, '0')}.png`;
+              fs.writeFileSync(path.join(outputPath, outputFileName), imageBuffer);
+            });
+
+            resolve(true);
+          } catch (error) {
+            console.error('Error converting PDF file:', error);
+            reject(new Error(`PDF conversion failed: ${error.message}`));
           }
         });
     }else{

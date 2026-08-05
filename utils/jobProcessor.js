@@ -1,13 +1,31 @@
 const fs = require('fs');
+const path = require('path');
 const extractComics = require('./extractComic');
 const comic_table = require('../model/m_comic');
 const UploadJob = require('../model/m_uploadJob');
+const { extractMetadataFromFilename, getUploadFolderPath, resolveComicAssets, sanitizeUploadFileName } = require('./comicStorage');
 
 class JobProcessor {
     constructor() {
         this.isProcessing = false;
         this.processingInterval = null;
         this.cleanupInterval = null;
+    }
+
+    async getKnownTitles(userId) {
+        const knownComics = await comic_table.findAll({
+            attributes: ['title'],
+            where: {
+                uid: userId,
+                title: {
+                    [require('sequelize').Op.ne]: null
+                }
+            }
+        });
+
+        return knownComics
+            .map(comic => String(comic.title || '').trim())
+            .filter(Boolean);
     }
 
     start() {
@@ -43,11 +61,14 @@ class JobProcessor {
             return;
         }
 
+        let job = null;
+        let workingFilePath = '';
+
         try {
             this.isProcessing = true;
             
             // Find the next pending job
-            const job = await UploadJob.findOne({
+            job = await UploadJob.findOne({
                 where: { status: 'pending' },
                 order: [['createdAt', 'ASC']]
             });
@@ -62,46 +83,60 @@ class JobProcessor {
             // Update job status to processing
             await job.update({ 
                 status: 'processing',
-                progress: 10
+                progress: 10,
+                errorMessage: null
             });
 
-            // Prepare file path for extraction
-            let tempFilePath = job.tempFilePath;
+            const uploadFolderPath = getUploadFolderPath(job.comicFolderId);
+            const safeFileName = sanitizeUploadFileName(job.fileName);
+            const knownTitles = await this.getKnownTitles(job.userId);
+            const extractedMetadata = extractMetadataFromFilename(safeFileName, { knownTitles });
+            workingFilePath = job.tempFilePath;
+
+            if (!fs.existsSync(uploadFolderPath)) {
+                fs.mkdirSync(uploadFolderPath, { recursive: true });
+            }
+
             if (job.extension === "cbr") {
                 const rarPath = job.tempFilePath + ".rar";
                 if (fs.existsSync(job.tempFilePath)) {
                     fs.renameSync(job.tempFilePath, rarPath);
                 }
-                tempFilePath = rarPath;
+                workingFilePath = rarPath;
             }
 
-            // Update progress
             await job.update({ progress: 30 });
 
-            // Extract the comic
             console.log(`Extracting comic for job ${job.jobId}...`);
-            await extractComics(tempFilePath, job.extension, job.comicFolderId);
+            await extractComics(workingFilePath, job.extension, job.comicFolderId);
 
-            // Update progress
+            let comicAssets = resolveComicAssets(job.comicFolderId);
+
+            if (comicAssets.viewerType !== 'image' && comicAssets.viewerType !== 'pdf') {
+                throw new Error('No supported content was found in the uploaded file.');
+            }
+
             await job.update({ progress: 80 });
 
-            // Create comic record in database
             const comicData = await comic_table.create({
                 savedFolder: job.comicFolderId,
-                uid: job.userId
+                uid: job.userId,
+                title: extractedMetadata.title,
+                author: extractedMetadata.author || '',
+                description: '',
+                coverImage: comicAssets.coverImage,
+                totalPages: comicAssets.totalPages
             });
 
-            // Update job with completion
             await job.update({
                 status: 'completed',
                 progress: 100,
                 comicId: comicData.id
             });
 
-            // Clean up temp file
             try {
-                if (fs.existsSync(tempFilePath)) {
-                    fs.unlinkSync(tempFilePath);
+                if (workingFilePath && fs.existsSync(workingFilePath)) {
+                    fs.unlinkSync(workingFilePath);
                 }
                 if (job.extension === "cbr" && fs.existsSync(job.tempFilePath)) {
                     fs.unlinkSync(job.tempFilePath);
@@ -114,12 +149,6 @@ class JobProcessor {
 
         } catch (error) {
             console.error('Error processing job:', error);
-            
-            // Update job with error status
-            const job = await UploadJob.findOne({
-                where: { status: 'processing' },
-                order: [['updatedAt', 'DESC']]
-            });
             
             if (job) {
                 await job.update({

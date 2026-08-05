@@ -45,7 +45,7 @@ function LoadMorefun(){
                 <a style="text-decoration: none;" class="col-md-3" href="comic/show/${comic.id}">
 
                 <div class="d-flex align-items-center" style="height: 300px;  border-radius: 2.5%;"> 
-                  <img style="max-height: 100%;max-width: 100%;" src="public\\uploads\\${comic.savedFolder}\\${comic.coverImage}" class="mx-auto d-block coverImage" alt="${comic.title}">
+                  <img style="max-height: 100%;max-width: 100%;" src="/public/uploads/${comic.savedFolder}/${comic.coverImage}" class="mx-auto d-block coverImage" alt="${comic.title}">
                 </div>
         
                 <div class="d-flex justify-content-evenly">

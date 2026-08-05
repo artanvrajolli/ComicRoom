@@ -66,11 +66,11 @@ const fetchComic = (req, res) => {
         offset: parseInt(offset_parma),
         limit: 12
     }).then((data) => {
-        if (data.length != 0) {
+        if (data.rows.length != 0) {
             res.send(data.rows);
             return;
         }
-        res.send("");
+        res.send([]);
 
     }).catch((err) => {
         res.send(err);
@@ -102,11 +102,11 @@ lastPage_table.findAndCountAll({
     offset: parseInt(offset_parma),
     limit: 12
  }).then((data)=>{
-    if (data.length != 0) {
+    if (data.rows.length != 0) {
         res.send(data.rows);
         return;
     }
-    res.send("");
+    res.send([]);
 }).catch((err)=>{
     res.send(err);
 })
