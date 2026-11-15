@@ -48,7 +48,7 @@
 
         var cover = el('div', 'cr-cover');
         var img = el('img');
-        img.src = '/comic/cover/' + encodeURIComponent(comic.id);
+        img.src = '/comic/cover/' + encodeURIComponent(comic.id) + (comic.coverImage ? '?v=' + encodeURIComponent(comic.coverImage) : '');
         img.alt = '';
         img.width = 400;
         img.height = 600;
@@ -64,29 +64,54 @@
         }
 
         if (readingEntry) {
-            // pageNumber is stored 0-based by the reader
-            var total = parseInt(comic.totalPages, 10) || 0;
-            var current = (parseInt(readingEntry.pageNumber, 10) || 0) + 1;
-            if (total > 0) {
-                if (current > total) current = total;
-                var bar = el('div', 'cr-progress');
-                bar.setAttribute('role', 'progressbar');
-                bar.setAttribute('aria-label', 'Reading progress');
-                bar.setAttribute('aria-valuemin', '0');
-                bar.setAttribute('aria-valuemax', String(total));
-                bar.setAttribute('aria-valuenow', String(current));
-                bar.setAttribute('aria-valuetext', 'Page ' + current + ' of ' + total);
-                var fill = el('span');
-                fill.style.width = Math.round((current / total) * 100) + '%';
-                bar.appendChild(fill);
-                meta.appendChild(bar);
-                meta.appendChild(el('p', 'cr-progress-label', 'Page ' + current + ' of ' + total));
-            }
+            link.classList.add('cr-reading-card');
+            meta.appendChild(buildReadingProgress(comic, readingEntry));
         }
 
         link.appendChild(meta);
         li.appendChild(link);
         return li;
+    }
+
+    // Progress bar + "p. X/Y" + Continue pill (same markup as v_comicReadingList.ejs)
+    function buildReadingProgress(comic, readingEntry) {
+        // pageNumber is stored 0-based by the reader
+        var total = parseInt(comic.totalPages, 10) || 0;
+        var current = (parseInt(readingEntry.pageNumber, 10) || 0) + 1;
+        if (current < 1) current = 1;
+        if (total > 0 && current > total) current = total;
+        var done = total > 0 && current >= total;
+        var percent = total > 0 ? Math.round((current / total) * 100) : 0;
+
+        var wrap = el('div', 'cr-reading-progress');
+        if (total > 0) {
+            var bar = el('div', 'cr-progress' + (done ? ' is-done' : ''));
+            bar.setAttribute('role', 'progressbar');
+            bar.setAttribute('aria-label', 'Reading progress');
+            bar.setAttribute('aria-valuemin', '0');
+            bar.setAttribute('aria-valuemax', String(total));
+            bar.setAttribute('aria-valuenow', String(current));
+            bar.setAttribute('aria-valuetext', 'Page ' + current + ' of ' + total);
+            var fill = el('span');
+            fill.style.width = percent + '%';
+            bar.appendChild(fill);
+            wrap.appendChild(bar);
+        }
+
+        var foot = el('div', 'cr-reading-foot');
+        var label = el('span', 'cr-progress-label', 'p. ' + current + (total > 0 ? '/' + total + ' ' : ''));
+        if (total > 0) {
+            label.setAttribute('aria-hidden', 'true'); // the progressbar already says "Page X of Y"
+            label.appendChild(el('span', 'cr-progress-pct', '\u00b7 ' + percent + '%'));
+        }
+        foot.appendChild(label);
+
+        var cont = el('span', 'cr-continue', (done ? 'Read again' : 'Continue') + ' ');
+        cont.setAttribute('aria-hidden', 'true');
+        cont.appendChild(el('i', 'fas fa-play'));
+        foot.appendChild(cont);
+        wrap.appendChild(foot);
+        return wrap;
     }
 
     function showSkeletons() {

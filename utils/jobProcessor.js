@@ -40,10 +40,11 @@ class JobProcessor {
             this.processNextJob();
         }, 5000); // Check for new jobs every 5 seconds
         
-        // Start cleanup interval for stale chunks (every 30 minutes)
+        // Hourly cleanup of abandoned chunked uploads and old failed jobs.
         this.cleanupInterval = setInterval(() => {
             this.cleanupStaleChunks();
-        }, 30 * 60 * 1000);
+        }, CHUNK_CLEANUP_INTERVAL_MS);
+        this.cleanupInterval.unref();
     }
 
     stop() {
@@ -201,37 +202,37 @@ class JobProcessor {
         });
     }
 
+    // Removes public/tmp/chunks/<uploadId> directories untouched for 24h
+    // (abandoned chunked uploads) and failed jobs older than 24h. Async fs only.
     async cleanupStaleChunks() {
+        const now = Date.now();
         try {
-            const chunksBasePath = process.cwd() + '/public/tmp/chunks';
-            if (!fs.existsSync(chunksBasePath)) {
-                return;
+            let chunkDirs = [];
+            try {
+                chunkDirs = await fs.promises.readdir(CHUNKS_DIR, { withFileTypes: true });
+            } catch (err) {
+                if (err.code !== 'ENOENT') throw err;
             }
 
-            const chunkDirs = fs.readdirSync(chunksBasePath);
-            const now = Date.now();
-            const maxAge = 2 * 60 * 60 * 1000; // 2 hours
-
-            for (const chunkDir of chunkDirs) {
-                const chunkDirPath = `${chunksBasePath}/${chunkDir}`;
+            for (const entry of chunkDirs) {
+                if (!entry.isDirectory()) continue;
+                const chunkDirPath = path.join(CHUNKS_DIR, entry.name);
                 try {
-                    const stats = fs.statSync(chunkDirPath);
-                    if (now - stats.mtime.getTime() > maxAge) {
-                        console.log(`Cleaning up stale chunk directory: ${chunkDir}`);
-                        // Remove all chunk files
-                        const chunkFiles = fs.readdirSync(chunkDirPath);
-                        for (const chunkFile of chunkFiles) {
-                            fs.unlinkSync(`${chunkDirPath}/${chunkFile}`);
-                        }
-                        fs.rmdirSync(chunkDirPath);
+                    const stats = await fs.promises.stat(chunkDirPath);
+                    if (now - stats.mtimeMs > STALE_CHUNK_MAX_AGE_MS) {
+                        console.log(`Cleaning up stale chunk directory: ${entry.name}`);
+                        await fs.promises.rm(chunkDirPath, { recursive: true, force: true });
                     }
                 } catch (err) {
-                    console.error('Error cleaning chunk directory:', err.message);
+                    if (err.code !== 'ENOENT') {
+                        console.error('Error cleaning chunk directory:', err.message);
+                    }
                 }
             }
 
-            // Also cleanup old failed upload jobs
-            await UploadJob.destroy({
+            // Also clean up old failed upload jobs (and any temp file they left behind)
+            const staleFailedJobs = await UploadJob.findAll({
+                attributes: ['id', 'tempFilePath', 'extension'],
                 where: {
                     status: 'failed',
                     createdAt: {
@@ -239,14 +240,60 @@ class JobProcessor {
                     }
                 }
             });
-
+            for (const job of staleFailedJobs) {
+                await this.removeJobTempFiles(job);
+            }
+            if (staleFailedJobs.length > 0) {
+                await UploadJob.destroy({ where: { id: staleFailedJobs.map(job => job.id) } });
+            }
         } catch (error) {
             console.error('Error during cleanup:', error);
         }
     }
+
+    // Deletes a job's leftover upload file (and the .rar copy made for cbr) when
+    // it is a regular file directly inside public/tmp. Never touches anything else.
+    async removeJobTempFiles(job) {
+        if (!job || !job.tempFilePath) return;
+        const candidates = [job.tempFilePath];
+        if (job.extension === 'cbr') candidates.push(job.tempFilePath + '.rar');
+        for (const candidate of candidates) {
+            if (!isSafeTempUploadPath(candidate)) continue;
+            try {
+                const stats = await fs.promises.lstat(candidate);
+                if (stats.isFile()) {
+                    await fs.promises.unlink(candidate);
+                }
+            } catch (err) {
+                if (err.code !== 'ENOENT') {
+                    console.error('Error removing job temp file:', err.message);
+                }
+            }
+        }
+    }
+}
+
+// Upload temp files live directly in public/tmp (express-fileupload temp files
+// and assembled chunked uploads). The app may be started with cwd == app root,
+// so accept either resolution of the tmp folder.
+const TMP_ROOTS = Array.from(new Set([
+    path.resolve(__dirname, '..', 'public', 'tmp'),
+    path.resolve(process.cwd(), 'public', 'tmp')
+]));
+const CHUNKS_DIR = path.join(process.cwd(), 'public', 'tmp', 'chunks');
+const STALE_CHUNK_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const CHUNK_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
+
+function isSafeTempUploadPath(filePath) {
+    if (typeof filePath !== 'string' || filePath === '' || filePath.includes('\0')) {
+        return false;
+    }
+    const resolved = path.resolve(filePath);
+    return TMP_ROOTS.some(root => path.dirname(resolved) === root);
 }
 
 // Create a singleton instance
 const jobProcessor = new JobProcessor();
 
-module.exports = jobProcessor; 
+module.exports = jobProcessor;
+module.exports.isSafeTempUploadPath = isSafeTempUploadPath; 

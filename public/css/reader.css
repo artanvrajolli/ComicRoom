@@ -37,11 +37,18 @@ html.rd-root {
     scroll-behavior: auto;
 }
 
+/* Paged mode: no pull-to-refresh, no rubber-banding. Vertical mode keeps
+   natural scrolling but never chains into pull-to-refresh / history swipes. */
 html.rd-paged,
 html.rd-paged body {
     height: 100%;
     overflow: hidden;
     overscroll-behavior: none;
+}
+
+html.rd-root:not(.rd-paged) {
+    overscroll-behavior-y: contain;
+    overscroll-behavior-x: none;
 }
 
 .reader-body *,
@@ -74,7 +81,17 @@ html.rd-paged body {
     line-height: 1;
     text-decoration: none;
     cursor: pointer;
+    touch-action: manipulation;
     transition: background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+}
+
+.rd-btn[hidden] {
+    display: none;
+}
+
+/* "more" icon variant of the info button only on narrow screens. */
+.rd-icon-narrow {
+    display: none;
 }
 
 .rd-btn:hover {
@@ -166,6 +183,7 @@ html.rd-paged body {
     padding-left: calc(10px + var(--rd-safe-left));
     padding-right: calc(10px + var(--rd-safe-right));
     background-color: var(--rd-bar-bg);
+    touch-action: manipulation;
     -webkit-backdrop-filter: blur(14px) saturate(140%);
     backdrop-filter: blur(14px) saturate(140%);
     transition: transform 0.25s var(--rd-ease), opacity 0.2s ease, visibility 0s linear 0s;
@@ -222,6 +240,7 @@ html.rd-paged body {
 }
 
 .rd-title-sub {
+    display: block;
     overflow: hidden;
     color: var(--rd-muted);
     font-size: 12px;
@@ -272,65 +291,123 @@ html.rd-paged body {
     gap: 8px;
 }
 
-.rd-slider {
-    --rd-fill: 0%;
+.rd-slider-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
     flex: 1 1 auto;
     min-width: 60px;
-    height: 28px;
+    height: 44px;
     margin: 0 4px;
+}
+
+/* The input itself is the 44px-tall hit area; the visible track is 6px. */
+.rd-slider {
+    --rd-fill: 0%;
+    display: block;
+    width: 100%;
+    height: 44px;
+    margin: 0;
+    padding: 0;
     background: transparent;
     cursor: pointer;
+    touch-action: none;
     -webkit-appearance: none;
     appearance: none;
 }
 
+.rd-slider[disabled] {
+    opacity: 0.4;
+    cursor: default;
+}
+
 .rd-slider::-webkit-slider-runnable-track {
-    height: 4px;
+    height: 6px;
     border-radius: 999px;
     background: linear-gradient(to right, var(--rd-accent) var(--rd-fill), rgba(255, 255, 255, 0.18) var(--rd-fill));
 }
 
 .rd-slider::-moz-range-track {
-    height: 4px;
+    height: 6px;
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.18);
 }
 
 .rd-slider::-moz-range-progress {
-    height: 4px;
+    height: 6px;
     border-radius: 999px;
     background: var(--rd-accent);
 }
 
 .rd-slider::-webkit-slider-thumb {
-    width: 16px;
-    height: 16px;
-    margin-top: -6px;
+    width: 22px;
+    height: 22px;
+    margin-top: -8px;
     border: 0;
     border-radius: 50%;
     background: #fff;
-    box-shadow: 0 0 0 4px rgba(245, 165, 36, 0.25);
+    box-shadow: 0 0 0 5px rgba(245, 165, 36, 0.25), 0 1px 4px rgba(0, 0, 0, 0.4);
+    transition: transform 0.12s ease;
     -webkit-appearance: none;
     appearance: none;
 }
 
 .rd-slider::-moz-range-thumb {
-    width: 16px;
-    height: 16px;
+    width: 22px;
+    height: 22px;
     border: 0;
     border-radius: 50%;
     background: #fff;
-    box-shadow: 0 0 0 4px rgba(245, 165, 36, 0.25);
+    box-shadow: 0 0 0 5px rgba(245, 165, 36, 0.25), 0 1px 4px rgba(0, 0, 0, 0.4);
+    transition: transform 0.12s ease;
+}
+
+.rd-slider-wrap.is-scrubbing .rd-slider::-webkit-slider-thumb {
+    transform: scale(1.18);
+}
+
+.rd-slider-wrap.is-scrubbing .rd-slider::-moz-range-thumb {
+    transform: scale(1.18);
 }
 
 .rd-slider:focus-visible {
     outline-offset: 4px;
 }
 
+/* Page bubble shown above the thumb while scrubbing ("12 / 27"). */
+.rd-scrub-bubble {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: var(--rd-thumb-x, 50%);
+    z-index: 2;
+    min-width: 64px;
+    padding: 7px 12px;
+    border: 1px solid var(--rd-border);
+    border-radius: 10px;
+    background-color: rgba(23, 24, 28, 0.96);
+    box-shadow: var(--rd-shadow);
+    color: var(--rd-text);
+    font-size: 15px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transform: translate(-50%, 6px);
+    transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.rd-slider-wrap.is-scrubbing .rd-scrub-bubble {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
 .rd-indicator {
     flex: 0 0 auto;
     min-width: 76px;
-    height: 36px;
+    height: 40px;
+    touch-action: manipulation;
     padding: 0 12px;
     border: 1px solid var(--rd-border);
     border-radius: 999px;
@@ -368,18 +445,18 @@ html.rd-paged body {
 
 .rd-jump input {
     width: 76px;
-    height: 36px;
+    height: 40px;
     padding: 0 10px;
     border: 1px solid var(--rd-border);
     border-radius: var(--rd-radius-sm);
     background-color: var(--rd-canvas);
     color: var(--rd-text);
-    font-size: 15px;
+    font-size: 16px; /* >= 16px: iOS does not zoom the page on focus */
     font-variant-numeric: tabular-nums;
 }
 
 .rd-jump .rd-pill {
-    min-height: 36px;
+    min-height: 40px;
     padding: 6px 14px;
 }
 
@@ -415,11 +492,13 @@ html.rd-paged body {
 }
 
 /* Fit screen (default): whole page visible, zoom/pan with transforms. */
+/* Inset by the safe areas so notches / the home indicator never cover the page. */
 .rd-stage[data-fit="contain"] .rd-page {
     position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
+    top: var(--rd-safe-top);
+    left: var(--rd-safe-left);
+    width: calc(100% - var(--rd-safe-left) - var(--rd-safe-right));
+    height: calc(100% - var(--rd-safe-top) - var(--rd-safe-bottom));
     object-fit: contain;
     object-position: center;
     will-change: transform;
@@ -429,6 +508,7 @@ html.rd-paged body {
 .rd-stage[data-fit="height"],
 .rd-stage[data-fit="original"] {
     overflow: auto;
+    padding: var(--rd-safe-top) var(--rd-safe-right) var(--rd-safe-bottom) var(--rd-safe-left);
     touch-action: pan-x pan-y;
     -webkit-overflow-scrolling: touch;
 }
@@ -588,8 +668,10 @@ html.rd-paged body {
     align-items: center;
     width: 100%;
     min-height: 100vh;
-    padding: 0 0 var(--rd-safe-bottom);
+    /* Full-bleed: no gutters, only the landscape notch / rounded-corner insets. */
+    padding: 0 var(--rd-safe-right) var(--rd-safe-bottom) var(--rd-safe-left);
     overflow-anchor: auto;
+    overscroll-behavior-y: contain;
 }
 
 .rd-scroll[hidden] {
@@ -649,7 +731,7 @@ html.rd-paged body {
 
 .rd-scroll-end {
     width: 100%;
-    padding: 48px 20px calc(96px + var(--rd-safe-bottom));
+    padding: 48px 16px calc(96px + var(--rd-safe-bottom));
 }
 
 /* ---------- End of comic card ---------- */
@@ -661,7 +743,10 @@ html.rd-paged body {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 20px;
+    padding: calc(20px + var(--rd-safe-top)) calc(20px + var(--rd-safe-right)) calc(20px + var(--rd-safe-bottom)) calc(20px + var(--rd-safe-left));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: manipulation;
     background-color: rgba(5, 5, 7, 0.72);
     -webkit-backdrop-filter: blur(6px);
     backdrop-filter: blur(6px);
@@ -670,7 +755,7 @@ html.rd-paged body {
 
 .rd-endcard-inner {
     width: min(440px, 100%);
-    margin: 0 auto;
+    margin: auto;
     padding: 28px 24px;
     border: 1px solid var(--rd-border);
     border-radius: var(--rd-radius);
@@ -740,6 +825,7 @@ html.rd-paged body {
     padding-top: var(--rd-safe-top);
     padding-right: var(--rd-safe-right);
     border-left: 1px solid var(--rd-border);
+    touch-action: manipulation;
     background-color: var(--rd-surface);
     box-shadow: var(--rd-shadow);
     visibility: hidden;
@@ -751,6 +837,14 @@ html.rd-paged body {
     visibility: visible;
     transform: none;
     transition: transform 0.28s var(--rd-ease), visibility 0s linear 0s;
+}
+
+.rd-drawer.is-dragging {
+    transition: none;
+}
+
+.rd-sheet-handle {
+    display: none;
 }
 
 .rd-drawer-head {
@@ -850,7 +944,8 @@ html.rd-paged body {
 .rd-seg button {
     flex: 1 1 0;
     min-width: 0;
-    min-height: 34px;
+    min-height: 40px;
+    touch-action: manipulation;
     padding: 6px 8px;
     border: 0;
     border-radius: var(--rd-radius-sm);
@@ -923,6 +1018,214 @@ html.rd-paged body {
     text-align: center;
 }
 
+/* Settings: switch, notes, touch-only sections */
+.rd-switch {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-height: 44px;
+    margin: 0;
+    cursor: pointer;
+}
+
+.rd-switch-text {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.rd-switch-text .rd-label {
+    margin-bottom: 2px;
+}
+
+.rd-hint-text {
+    color: var(--rd-muted);
+    font-size: 12.5px;
+    line-height: 1.4;
+}
+
+.rd-switch input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.rd-switch-track {
+    position: relative;
+    flex: 0 0 auto;
+    width: 46px;
+    height: 28px;
+    border-radius: 999px;
+    background-color: rgba(255, 255, 255, 0.18);
+    transition: background-color 0.15s ease;
+}
+
+.rd-switch-track::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background-color: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    transition: transform 0.15s var(--rd-ease);
+}
+
+.rd-switch input:checked + .rd-switch-track {
+    background-color: var(--rd-accent);
+}
+
+.rd-switch input:checked + .rd-switch-track::after {
+    transform: translateX(18px);
+}
+
+.rd-switch input:disabled + .rd-switch-track {
+    opacity: 0.4;
+}
+
+.rd-switch input:focus-visible + .rd-switch-track {
+    outline: 2px solid var(--rd-accent);
+    outline-offset: 2px;
+}
+
+.rd-note {
+    display: flex;
+    gap: 8px;
+    margin: 12px 0 0;
+    padding: 10px 12px;
+    border: 1px solid var(--rd-border);
+    border-radius: var(--rd-radius-sm);
+    background-color: var(--rd-canvas);
+    color: var(--rd-muted);
+    font-size: 12.5px;
+    line-height: 1.45;
+}
+
+.rd-note[hidden] {
+    display: none;
+}
+
+.rd-note i {
+    margin-top: 2px;
+    color: var(--rd-success);
+}
+
+.rd-pill.rd-fs[hidden] {
+    display: none;
+}
+
+.rd-touch-only {
+    display: none;
+}
+
+.rd-touch-only .rd-keys dt {
+    color: var(--rd-text);
+    white-space: normal;
+}
+
+@media (hover: none) and (pointer: coarse) {
+    .rd-touch-only {
+        display: block;
+    }
+
+    .rd-keys-wrap {
+        display: none;
+    }
+}
+
+/* Installed app (standalone) or a browser without the Fullscreen API: no fullscreen control. */
+@media (display-mode: standalone) {
+    .rd-fs {
+        display: none !important;
+    }
+}
+
+.rd-no-fullscreen .rd-fs {
+    display: none !important;
+}
+
+/* ---------- First-run gesture hint (touch) ---------- */
+
+.rd-gesture-hint {
+    position: fixed;
+    inset: 0;
+    z-index: 42;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    padding: calc(16px + var(--rd-safe-top)) calc(12px + var(--rd-safe-right)) calc(24px + var(--rd-safe-bottom)) calc(12px + var(--rd-safe-left));
+    background-color: rgba(5, 5, 7, 0.8);
+    touch-action: none;
+    animation: rd-fade-in 0.25s ease;
+}
+
+.rd-gesture-hint[hidden] {
+    display: none;
+}
+
+.rd-gesture-zones {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    width: 100%;
+    max-width: 560px;
+    flex: 1 1 auto;
+    max-height: 420px;
+}
+
+.rd-gesture-zone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 10px 6px;
+    border: 1px dashed rgba(255, 255, 255, 0.22);
+    color: var(--rd-text);
+    font-size: 13px;
+    line-height: 1.35;
+    text-align: center;
+}
+
+.rd-gesture-zone + .rd-gesture-zone {
+    border-left: 0;
+}
+
+.rd-gesture-zone:first-child {
+    border-radius: var(--rd-radius) 0 0 var(--rd-radius);
+}
+
+.rd-gesture-zone:last-child {
+    border-radius: 0 var(--rd-radius) var(--rd-radius) 0;
+}
+
+.rd-gesture-zone i {
+    color: var(--rd-accent);
+    font-size: 22px;
+}
+
+.rd-gesture-zone-mid {
+    background-color: rgba(255, 255, 255, 0.04);
+}
+
+.rd-gesture-sub {
+    color: var(--rd-muted);
+    font-size: 12px;
+}
+
+.rd-gesture-foot {
+    margin: 0;
+    color: var(--rd-muted);
+    font-size: 13px;
+    text-align: center;
+}
+
 /* ---------- Toast / page flash ---------- */
 
 .rd-toast,
@@ -975,9 +1278,9 @@ html.rd-paged body {
     }
 
     .rd-btn {
-        width: 38px;
-        height: 40px;
-        font-size: 16px;
+        width: 44px;
+        height: 44px;
+        font-size: 17px;
     }
 
     .rd-topbar {
@@ -995,36 +1298,159 @@ html.rd-paged body {
     }
 
     .rd-bottombar {
-        gap: 4px;
+        gap: 2px;
+        padding-left: calc(4px + var(--rd-safe-left));
+        padding-right: calc(6px + var(--rd-safe-right));
+    }
+
+    .rd-slider-wrap {
+        margin: 0 2px;
     }
 
     .rd-indicator {
-        min-width: 64px;
+        min-width: 70px;
+        height: 44px;
         padding: 0 10px;
+        font-size: 14px;
     }
 
+    .rd-jump {
+        right: calc(6px + var(--rd-safe-right));
+        left: calc(6px + var(--rd-safe-left));
+    }
+
+    .rd-jump input {
+        flex: 1 1 auto;
+        height: 44px;
+    }
+
+    .rd-jump .rd-pill {
+        min-height: 44px;
+    }
+
+    /* Info drawer becomes a bottom sheet; drag it down to close. */
     .rd-drawer {
         top: auto;
         left: 0;
         width: 100%;
-        max-height: 82vh;
-        max-height: 82dvh;
+        max-height: 85vh;
+        max-height: 85dvh;
+        padding-top: 0;
         padding-right: 0;
         border-left: 0;
         border-top: 1px solid var(--rd-border);
-        border-radius: var(--rd-radius) var(--rd-radius) 0 0;
+        border-radius: 18px 18px 0 0;
         transform: translateY(100%);
     }
 
     .rd-drawer.is-open {
         transform: none;
     }
+
+    .rd-sheet-handle {
+        display: block;
+        flex: 0 0 auto;
+        width: 40px;
+        height: 5px;
+        margin: 8px auto 0;
+        border-radius: 999px;
+        background-color: rgba(255, 255, 255, 0.28);
+    }
+
+    .rd-drawer-head {
+        padding: 4px 8px 8px 20px;
+    }
+
+    .rd-drawer-body {
+        padding-left: calc(20px + var(--rd-safe-left));
+        padding-right: calc(20px + var(--rd-safe-right));
+    }
+
+    .rd-seg button {
+        min-height: 44px;
+    }
+
+    .rd-pill {
+        min-height: 44px;
+    }
+
+    .rd-endcard-inner {
+        padding: 24px 18px;
+    }
+}
+
+/* Phones (< 480px): top bar keeps back, title, offline and "more" only.
+   Mode / fit / fullscreen are in the settings sheet. */
+@media (max-width: 479.98px) {
+    .rd-wide-only {
+        display: none !important;
+    }
+
+    .rd-icon-wide {
+        display: none;
+    }
+
+    .rd-icon-narrow {
+        display: inline;
+    }
+
+    /* Without an author line the title may use two lines. */
+    .rd-title:not(.has-sub) .rd-title-main {
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
 }
 
 @media (hover: none) and (pointer: coarse) {
     .rd-btn {
-        min-width: 42px;
+        min-width: 44px;
         height: 44px;
+    }
+
+    .rd-indicator {
+        height: 44px;
+    }
+}
+
+/* Landscape phones: slimmer bars (targets stay 44px), compact end card. */
+@media (orientation: landscape) and (max-height: 500px) {
+    .rd-topbar {
+        min-height: calc(48px + var(--rd-safe-top));
+    }
+
+    .rd-bottombar {
+        min-height: calc(52px + var(--rd-safe-bottom));
+    }
+
+    .rd-toast {
+        bottom: calc(70px + var(--rd-safe-bottom));
+    }
+
+    .rd-drawer-body {
+        padding-top: 14px;
+    }
+
+    .rd-endcard-inner {
+        width: min(560px, 100%);
+        padding: 18px 20px;
+    }
+
+    .rd-endcard-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        margin-top: 14px;
+    }
+
+    .rd-endcard-actions > :first-child:nth-last-child(odd) {
+        grid-column: 1 / -1;
+    }
+
+    .rd-gesture-zones {
+        max-height: 240px;
     }
 }
 
@@ -1048,6 +1474,13 @@ html.rd-paged body {
 
 /* ---------- PDF viewer ---------- */
 
+html.rd-pdf-root,
+html.rd-pdf-root body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+}
+
 .rd-pdf {
     display: flex;
     flex-direction: column;
@@ -1063,8 +1496,9 @@ html.rd-paged body {
 
 .rd-pdf-frame {
     flex: 1 1 auto;
-    width: 100%;
+    width: auto;
     min-height: 0;
+    margin: 0 var(--rd-safe-right) var(--rd-safe-bottom) var(--rd-safe-left);
     border: 0;
     background-color: #1b1c20;
 }
@@ -1076,7 +1510,11 @@ html.rd-paged body {
     justify-content: center;
     gap: 14px;
     height: 100%;
-    padding: 24px;
+    padding: 24px calc(20px + var(--rd-safe-right)) calc(24px + var(--rd-safe-bottom)) calc(20px + var(--rd-safe-left));
     color: var(--rd-muted);
     text-align: center;
+}
+
+.rd-pdf-fallback[hidden] {
+    display: none;
 }

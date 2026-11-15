@@ -23,6 +23,15 @@ function checkIfisOnline(req,res,next){
     next();
 }
 
+// Same as checkIfisOnline, but for JSON endpoints.
+function requireLoginJson(req,res,next){
+    if(typeof req.session.userData == 'undefined'){
+        res.status(401).json({ error: "Authentication required" });
+        return;
+    }
+    next();
+}
+
 function getUploadInfo(fileName) {
     const safeFileName = sanitizeUploadFileName(fileName);
     const extension = safeFileName.includes('.') ? safeFileName.split('.').pop().toLowerCase() : "";
@@ -30,6 +39,32 @@ function getUploadInfo(fileName) {
         safeFileName,
         extension
     };
+}
+
+// Creates the processing job for an upload file that has been fully received
+// (form upload, the chunked upload's final step, Web Share Target).
+// `uploadInfo` comes from getUploadInfo() and must already be validated.
+const queueUploadJob = (userId, uploadInfo, tempFilePath)=>{
+    return jobProcessor.addJob({
+        userId: userId,
+        comicFolderId: "comic_" + new Date().getTime(),
+        fileName: uploadInfo.safeFileName,
+        tempFilePath: tempFilePath,
+        extension: uploadInfo.extension
+    });
+}
+
+// Flash message + notification tracking for uploads that redirect to the status page.
+const rememberStartedUpload = (req, job, uploadInfo)=>{
+    req.session.msg = "Upload started! Your comic is being processed. You will be redirected when ready.";
+    req.session.uploadJobId = job.jobId; // Store job ID in session for notification tracking
+    req.session.uploadFileName = uploadInfo.safeFileName;
+}
+
+const removeUploadTempFile = (file)=>{
+    if(file && file.tempFilePath && jobProcessor.isSafeTempUploadPath(file.tempFilePath)){
+        fs.promises.unlink(file.tempFilePath).catch(()=>{});
+    }
 }
 
 const PostComicUpload = async (req,res)=>{
@@ -67,22 +102,12 @@ const PostComicUpload = async (req,res)=>{
         return;
     }
     
-    var comicFolder_Id = "comic_"+new Date().getTime();
-    
     try {
         // Add job to processing queue instead of processing immediately
-        const job = await jobProcessor.addJob({
-            userId: req.session.userData.id,
-            comicFolderId: comicFolder_Id,
-            fileName: uploadInfo.safeFileName,
-            tempFilePath: req.files.fileComicUpload.tempFilePath,
-            extension: uploadInfo.extension
-        });
+        const job = await queueUploadJob(req.session.userData.id, uploadInfo, req.files.fileComicUpload.tempFilePath);
         
         console.log('Job created successfully:', job.jobId);
-        req.session.msg = "Upload started! Your comic is being processed. You will be redirected when ready.";
-        req.session.uploadJobId = job.jobId; // Store job ID in session for notification tracking
-        req.session.uploadFileName = uploadInfo.safeFileName;
+        rememberStartedUpload(req, job, uploadInfo);
         res.redirect("/comic/status/" + job.jobId);
     } catch (error) {
         console.error('Error starting upload job:', error);
@@ -198,6 +223,7 @@ const addComicPages = async (req,res)=>{
         ];
 
         rebuildComicImagePages(comic.savedFolder, nextPages);
+        thumbnails.removePageThumbs(comic.id);
         await updateComicAssetMetadata(comic);
 
         req.session.msg = `${uploadedPages.length} page${uploadedPages.length === 1 ? '' : 's'} added successfully.`;
@@ -234,6 +260,7 @@ const deleteComicPage = async (req,res)=>{
 
         const nextPages = currentPages.filter((page, index)=>index !== (pageNumber - 1));
         rebuildComicImagePages(comic.savedFolder, nextPages);
+        thumbnails.removePageThumbs(comic.id);
         await updateComicAssetMetadata(comic);
 
         req.session.msg = `Page ${pageNumber} removed successfully.`;
@@ -272,6 +299,7 @@ const moveComicPage = async (req,res)=>{
         const [movedPage] = nextPages.splice(pageNumber - 1, 1);
         nextPages.splice(targetPageNumber - 1, 0, movedPage);
         rebuildComicImagePages(comic.savedFolder, nextPages);
+        thumbnails.removePageThumbs(comic.id);
         await updateComicAssetMetadata(comic);
 
         req.session.msg = `Page ${pageNumber} moved to position ${targetPageNumber}.`;
@@ -417,6 +445,8 @@ const showcomic_id = async (req,res)=>{
 
 const showgallery_comic = async (req,res)=>{
     var searchKeywords = normalizeKeyword(req.query.keyword);
+    var msg = req.session.msg;
+    req.session.msg = "";
     comic_table.findAll({
         attributes: GALLERY_ATTRIBUTES,
         where:{
@@ -442,7 +472,7 @@ const showgallery_comic = async (req,res)=>{
             });
             return;
         }
-        res.render("v_comicGallery",{ comics:data, userData: req.session.userData , searchKeywords:searchKeywords })
+        res.render("v_comicGallery",{ comics:data, userData: req.session.userData , searchKeywords:searchKeywords, msg })
 
     }).catch((err)=>{
         console.error('Error loading gallery:', err);
@@ -494,6 +524,69 @@ const serveComicCover = async (req,res)=>{
     }
 
     // Fallback: stream the original cover (send handles ETag/Last-Modified/304).
+    res.sendFile(originalPath, { maxAge: thumbnails.CACHE_MAX_AGE_SECONDS * 1000, dotfiles: 'allow' }, (err)=>{
+        if(err && !res.headersSent){
+            res.status(err.status === 404 || err.code === 'ENOENT' ? 404 : 500).end();
+        }
+    });
+}
+
+// GET /comic/page-thumb/:id?file=<page relativePath> -> ~320px WebP page thumbnail.
+// `file` must be one of the comic's current pages (listComicPages().relativePath).
+const servePageThumbnail = async (req,res)=>{
+    const comicId = Number.parseInt(req.params.id, 10);
+    if(!Number.isInteger(comicId) || comicId < 1 || String(comicId) !== req.params.id){
+        res.status(404).end();
+        return;
+    }
+    const file = req.query.file;
+    if(typeof file !== 'string' || file === '' || file.length > 2000){
+        res.status(400).end();
+        return;
+    }
+    let comic = null;
+    try{
+        comic = await comic_table.findByPk(comicId, { attributes: ["id","savedFolder"] });
+    }catch(err){
+        console.error('Page thumbnail lookup failed:', err.message);
+        res.status(500).end();
+        return;
+    }
+    if(!comic || !comic.savedFolder){
+        res.status(404).end();
+        return;
+    }
+    // Only the comic's current pages are served (no traversal, no arbitrary files).
+    const isCurrentPage = listComicPages(comic.savedFolder).some((page)=>page.relativePath === file);
+    const originalPath = isCurrentPage ? thumbnails.resolveOriginalPagePath(comic, file) : '';
+    if(!originalPath){
+        res.status(404).end();
+        return;
+    }
+
+    try{
+        const thumb = await thumbnails.getPageThumbnail(comic, file);
+        res.set({
+            'Content-Type': 'image/webp',
+            'Cache-Control': `public, max-age=${thumbnails.CACHE_MAX_AGE_SECONDS}`,
+            'ETag': thumb.etag,
+            'Last-Modified': thumb.lastModified.toUTCString()
+        });
+        if(req.fresh){
+            res.status(304).end();
+            return;
+        }
+        res.send(thumb.buffer);
+        return;
+    }catch(err){
+        if(err && err.code === 'ENOENT'){
+            res.status(404).end();
+            return;
+        }
+        console.error(`Page thumbnail failed for comic ${comicId} (${file}), serving original:`, err.message);
+    }
+
+    // Fallback: stream the original page (send handles ETag/Last-Modified/304).
     res.sendFile(originalPath, { maxAge: thumbnails.CACHE_MAX_AGE_SECONDS * 1000, dotfiles: 'allow' }, (err)=>{
         if(err && !res.headersSent){
             res.status(err.status === 404 || err.code === 'ENOENT' ? 404 : 500).end();
@@ -607,6 +700,148 @@ const getActiveJobs = async (req, res) => {
     }
 }
 
+const RECENT_UPLOADS_LIMIT = 50;
+const DISMISSABLE_JOB_STATUSES = ['completed', 'failed'];
+
+const toIsoString = (value)=>{
+    if(!value) return null;
+    const date = value instanceof Date ? value : new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+// Latest upload jobs of a user, newest first, as plain objects:
+// { jobId, fileName, extension, status, progress, errorMessage, createdAt, updatedAt, comicId, comic }
+// comic = { id, title, savedFolder } or null when it no longer exists.
+const getRecentUploadJobs = async (userId)=>{
+    const jobs = await UploadJob.findAll({
+        attributes: ['jobId','fileName','extension','status','progress','errorMessage','createdAt','updatedAt','comicId'],
+        where: { userId: userId },
+        order: [['createdAt','DESC'],['id','DESC']],
+        limit: RECENT_UPLOADS_LIMIT
+    });
+    const comicIds = Array.from(new Set(jobs.map((job)=>job.comicId).filter((id)=>Number.isInteger(id))));
+    const comics = comicIds.length === 0 ? [] : await comic_table.findAll({
+        attributes: ['id','title','savedFolder'],
+        where: { id: { [Op.in]: comicIds }, uid: userId }
+    });
+    const comicsById = new Map(comics.map((comic)=>[comic.id, { id: comic.id, title: comic.title, savedFolder: comic.savedFolder }]));
+    return jobs.map((job)=>({
+        jobId: job.jobId,
+        fileName: job.fileName,
+        extension: job.extension,
+        status: job.status,
+        progress: job.progress,
+        errorMessage: job.errorMessage,
+        createdAt: toIsoString(job.createdAt),
+        updatedAt: toIsoString(job.updatedAt),
+        comicId: job.comicId,
+        comic: (job.comicId && comicsById.get(job.comicId)) || null
+    }));
+}
+
+// GET /comic/uploads
+const getUploadsPage = async (req,res)=>{
+    var msg = req.session.msg;
+    req.session.msg = "";
+    try{
+        const jobs = await getRecentUploadJobs(req.session.userData.id);
+        res.render("v_uploads", { userData: req.session.userData, msg, jobs });
+    }catch(error){
+        console.error('Error loading uploads:', error);
+        if(!res.headersSent){
+            res.status(500).send("Unable to load your uploads.");
+        }
+    }
+}
+
+// GET /ajax/upload/recent
+const getRecentUploadsAPI = async (req,res)=>{
+    if(!req.session.userData){
+        return res.status(401).json({ error: "Not authenticated" });
+    }
+    try{
+        res.json(await getRecentUploadJobs(req.session.userData.id));
+    }catch(error){
+        console.error('Error getting recent uploads:', error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+}
+
+// POST /comic/uploads/:jobId/dismiss -> removes a finished job row (never the comic).
+const dismissUploadJob = async (req,res)=>{
+    try{
+        const jobId = String(req.params.jobId || '');
+        if(jobId === '' || jobId.length > 100){
+            return res.status(404).json({ error: "Upload job not found." });
+        }
+        const job = await UploadJob.findOne({ where: { jobId: jobId } });
+        if(!job){
+            return res.status(404).json({ error: "Upload job not found." });
+        }
+        if(job.userId !== req.session.userData.id){
+            return res.status(403).json({ error: "Access denied." });
+        }
+        if(!DISMISSABLE_JOB_STATUSES.includes(job.status)){
+            return res.status(409).json({ error: "Only completed or failed uploads can be dismissed." });
+        }
+        await jobProcessor.removeJobTempFiles(job);
+        await job.destroy();
+        res.json({ ok: true });
+    }catch(error){
+        console.error('Error dismissing upload job:', error);
+        res.status(500).json({ error: "Unable to dismiss this upload." });
+    }
+}
+
+// POST /comic/share-target (Web Share Target, multipart field "comic").
+const PostShareTarget = async (req,res)=>{
+    const received = req.files ? req.files.comic : undefined;
+    const files = Array.isArray(received) ? received : (received ? [received] : []);
+    const file = files[0];
+    files.slice(1).forEach(removeUploadTempFile);
+
+    if(typeof req.session.userData == 'undefined'){
+        removeUploadTempFile(file);
+        req.session.msg = "Log in to ComicRoom, then share the comic again to upload it.";
+        res.redirect(303, "/login");
+        return;
+    }
+
+    const fail = (message)=>{
+        removeUploadTempFile(file);
+        req.session.msg = message;
+        res.redirect(303, "/comic/upload");
+    };
+
+    if(!file || !file.tempFilePath){
+        fail("No file was shared. Choose a .cbz, .cbr or .pdf file.");
+        return;
+    }
+    if(file.truncated){
+        fail("The shared file is larger than the 2 GB upload limit.");
+        return;
+    }
+    if(!file.size){
+        fail("The shared file was empty.");
+        return;
+    }
+    const uploadInfo = getUploadInfo(file.name);
+    if(!ALLOWED_UPLOAD_EXTENSIONS.includes(uploadInfo.extension)){
+        fail("Extension should be .cbz, .cbr or .pdf");
+        return;
+    }
+
+    try{
+        const job = await queueUploadJob(req.session.userData.id, uploadInfo, file.tempFilePath);
+        console.log('Share target job created:', job.jobId);
+        rememberStartedUpload(req, job, uploadInfo);
+        res.redirect(303, "/comic/status/" + job.jobId);
+    }catch(error){
+        console.error('Error starting shared upload job:', error);
+        fail("Error starting upload process. Please try again.");
+    }
+}
+
 const PostChunkedUpload = async (req, res) => {
     try {
         // Check authentication
@@ -670,14 +905,7 @@ const PostChunkedUpload = async (req, res) => {
             await fs.promises.rm(chunksDir, { recursive: true, force: true });
 
             // Create a job for processing
-            const comicFolderId = "comic_" + new Date().getTime();
-            const job = await jobProcessor.addJob({
-                userId: req.session.userData.id,
-                comicFolderId: comicFolderId,
-                fileName: uploadInfo.safeFileName,
-                tempFilePath: finalFilePath,
-                extension: uploadInfo.extension
-            });
+            const job = await queueUploadJob(req.session.userData.id, uploadInfo, finalFilePath);
 
             return res.json({
                 status: 'complete',
@@ -715,5 +943,11 @@ module.exports = {
     getUploadStatus,
     getUploadStatusAPI,
     getActiveJobs,
-    PostChunkedUpload
+    PostChunkedUpload,
+    requireLoginJson,
+    servePageThumbnail,
+    getUploadsPage,
+    getRecentUploadsAPI,
+    dismissUploadJob,
+    PostShareTarget
 }

@@ -4,20 +4,39 @@
   var list = Array.isArray(comics) ? comics : [];
   var signedIn = typeof userData != 'undefined' && userData != null;
   var EAGER_COUNT = 6; // first row on the widest grid
+  // Flash message(s) from the controller: string or array, may be missing/empty
+  var flashMessages = (typeof msg !== 'undefined' && msg != null ? (Array.isArray(msg) ? msg : [msg]) : [])
+    .filter(function (m) { return m != null && String(m).trim() !== ''; })
+    .map(String);
 %>
 <div id="content_body" class="container-xl cr-page">
+  <% if (flashMessages.length) { %>
+    <div class="cr-alert cr-alert-dismissible" role="status">
+      <i class="fas fa-info-circle" aria-hidden="true"></i>
+      <div class="cr-alert-body">
+        <% if (flashMessages.length === 1) { %><%= flashMessages[0] %><% } else { %>
+          <ul><% flashMessages.forEach(function (m) { %><li><%= m %></li><% }) %></ul>
+        <% } %>
+      </div>
+      <button type="button" class="cr-icon-btn cr-alert-close" data-cr-dismiss aria-label="Dismiss message"><i class="fas fa-times" aria-hidden="true"></i></button>
+    </div>
+  <% } %>
+
   <div class="cr-page-head">
     <div>
       <% if (keyword) { %>
         <h1 class="cr-page-title">Search results</h1>
-        <p class="cr-page-sub">Comics matching <strong class="text-white">&ldquo;<%= keyword %>&rdquo;</strong> &middot; <a href="/comic">Clear search</a></p>
+        <p class="cr-page-sub">Comics matching <strong class="text-white">&ldquo;<%= keyword %>&rdquo;</strong></p>
       <% } else { %>
         <h1 class="cr-page-title">Gallery</h1>
         <p class="cr-page-sub">Latest uploads first.</p>
       <% } %>
     </div>
-    <% if (signedIn) { %>
-      <a class="btn cr-btn-accent" href="/comic/upload"><i class="fas fa-file-upload" aria-hidden="true"></i> Upload a comic</a>
+    <% if (keyword) { %>
+      <a class="btn cr-btn-ghost" href="/comic"><i class="fas fa-times" aria-hidden="true"></i> Clear search</a>
+    <% } else if (signedIn) { %>
+      <%# Phones/tablets upload from the tab bar's centre button %>
+      <a class="btn cr-btn-accent d-none d-lg-inline-flex" href="/comic/upload"><i class="fas fa-file-upload" aria-hidden="true"></i> Upload a comic</a>
     <% } %>
   </div>
 
@@ -44,7 +63,7 @@
         <li data-id="<%= comic.id %>">
           <a class="cr-comic-card" href="/comic/show/<%= encodeURIComponent(comic.id) %>">
             <div class="cr-cover">
-              <img src="/comic/cover/<%= encodeURIComponent(comic.id) %>" alt="" width="400" height="600" decoding="async"<% if (i >= EAGER_COUNT) { %> loading="lazy"<% } else if (i === 0) { %> fetchpriority="high"<% } %>>
+              <img src="/comic/cover/<%= encodeURIComponent(comic.id) %><% if (comic.coverImage) { %>?v=<%= encodeURIComponent(comic.coverImage) %><% } %>" alt="" width="400" height="600" decoding="async"<% if (i >= EAGER_COUNT) { %> loading="lazy"<% } else if (i === 0) { %> fetchpriority="high"<% } %>>
             </div>
             <div class="cr-comic-meta">
               <h2 class="cr-comic-title"><%= comic.title %></h2>
@@ -60,7 +79,7 @@
       <button id="loadMore" type="button" class="btn cr-btn-ghost"<% if (list.length < 12) { %> hidden<% } %>>Load more</button>
     </div>
     <div id="feedSentinel" class="cr-sentinel" aria-hidden="true"></div>
-    <script src="/public/script/loadMoreComic.js?v=2" defer></script>
+    <script src="/public/script/loadMoreComic.js?v=4" defer></script>
   <% } %>
 </div>
 <%- include("footer") %>

@@ -8,6 +8,8 @@ const LAST_PAGE_ATTRIBUTES = ["id", "pageNumber", "comicId", "userId"];
 
 var getreadingList = (req, res) => {
     var searchKeywords = normalizeKeyword(req.query.keyword);
+    var msg = req.session.msg;
+    req.session.msg = "";
     lastPage_table.findAll({
         attributes: LAST_PAGE_ATTRIBUTES,
         include: {
@@ -35,6 +37,7 @@ var getreadingList = (req, res) => {
         }
         res.render("v_comicReadingList", {
             data,
+            msg,
             userData: req.session.userData,
             searchKeywords: searchKeywords
         });

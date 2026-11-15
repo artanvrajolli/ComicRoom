@@ -21,11 +21,11 @@
       <div class="mb-3">
         <label for="loginUsername" class="form-label">Username or email</label>
         <input id="loginUsername" name="username" type="text" class="form-control" autocomplete="username"
-          autocapitalize="none" spellcheck="false" required autofocus>
+          autocapitalize="none" spellcheck="false" enterkeyhint="next" required>
       </div>
       <div class="mb-4">
         <label for="loginPassword" class="form-label">Password</label>
-        <input id="loginPassword" name="password" type="password" class="form-control" autocomplete="current-password" required>
+        <input id="loginPassword" name="password" type="password" class="form-control" autocomplete="current-password" enterkeyhint="go" required>
       </div>
       <button class="btn cr-btn-accent w-100" type="submit"><i class="fas fa-sign-in-alt" aria-hidden="true"></i> Log in</button>
     </form>
@@ -33,4 +33,10 @@
     <p class="cr-auth-alt">New to ComicRoom? <a href="/register">Create an account</a></p>
   </div>
 </div>
+<script>
+  // Focus the first field on desktop only: on phones it would pop the keyboard over the form.
+  if (window.matchMedia && window.matchMedia('(pointer: fine)').matches) {
+    document.getElementById('loginUsername').focus();
+  }
+</script>
 <%- include("footer") %>

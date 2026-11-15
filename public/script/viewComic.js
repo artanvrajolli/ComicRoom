@@ -47,6 +47,52 @@
         reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     } catch (error) {}
 
+    function mediaMatches(query) {
+        try {
+            return window.matchMedia(query).matches;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    // Phones/tablets driven by touch (no hover, coarse pointer).
+    function isTouchUi() {
+        return mediaMatches('(hover: none) and (pointer: coarse)');
+    }
+
+    // A phone held sideways: short and touch-driven (tablets stay > 500px tall).
+    function isLandscapePhone() {
+        return isTouchUi() && mediaMatches('(orientation: landscape) and (max-height: 500px)');
+    }
+
+    // Bottom-sheet presentation of the info panel (matches reader.css).
+    function isSheetLayout() {
+        return mediaMatches('(max-width: 575.98px)');
+    }
+
+    function isStandalone() {
+        return mediaMatches('(display-mode: standalone)') || window.navigator.standalone === true;
+    }
+
+    // Data saver / very slow network: preload less and never auto-download.
+    function connectionInfo() {
+        try {
+            var connection = navigator.connection;
+            if (!connection) {
+                return { constrained: false, saveData: false };
+            }
+            var saveData = !!connection.saveData;
+            var slow = /(^|-)2g$/.test(String(connection.effectiveType || ''));
+            return { constrained: saveData || slow, saveData: saveData };
+        } catch (error) {
+            return { constrained: false, saveData: false };
+        }
+    }
+
+    function connectionConstrained() {
+        return connectionInfo().constrained;
+    }
+
     // ------------------------------------------------------------------
     // Elements
     // ------------------------------------------------------------------
@@ -90,6 +136,14 @@
     var srStatus = byId('srStatus');
     var hintPrev = byId('hintPrev');
     var hintNext = byId('hintNext');
+    var sliderWrap = byId('sliderWrap');
+    var scrubBubble = byId('scrubBubble');
+    var gestureHint = byId('gestureHint');
+    var gestureHintClose = byId('gestureHintClose');
+    var wakeLockToggle = byId('wakeLockToggle');
+    var wakeLockNote = byId('wakeLockNote');
+    var sheetFullscreenButton = byId('sheetFullscreen');
+    var dataSaverNote = byId('dataSaverNote');
 
     // ------------------------------------------------------------------
     // Storage (localStorage can throw in private mode / blocked storage)
@@ -127,7 +181,17 @@
     if (MODES.indexOf(readerMode) === -1) {
         readerMode = 'paged';
     }
-    var fitMode = FITS.indexOf(prefs.fit) !== -1 ? prefs.fit : 'contain';
+    // A fit the reader picked explicitly always wins. Without one, landscape
+    // phones default to fit width (pages are unreadably small otherwise).
+    function userFit() {
+        return FITS.indexOf(prefs.fit) !== -1 ? prefs.fit : null;
+    }
+
+    function autoFit() {
+        return isLandscapePhone() ? 'width' : 'contain';
+    }
+
+    var fitMode = userFit() || autoFit();
 
     // ------------------------------------------------------------------
     // Initial page: URL hash (#p=N) > server last-read page > local fallback
@@ -495,6 +559,9 @@
             }
             var anchor = current;
             var first = preload(anchor + 1);
+            if (connectionConstrained()) {
+                return;
+            }
             var chain = first ? first.promise : Promise.resolve();
             chain.then(function () {
                 if (anchor !== current) {
@@ -850,7 +917,7 @@
                     clearTimeout(unloadTimer);
                     unloadTimer = setTimeout(unloadFarScrollPages, 250);
                 }
-            }, { rootMargin: '150% 0px 150% 0px' });
+            }, { rootMargin: connectionConstrained() ? '50% 0px 60% 0px' : '150% 0px 150% 0px' });
 
             // A 1px band across the middle of the viewport decides the current page.
             currentObserver = new IntersectionObserver(function (entries) {
@@ -893,6 +960,7 @@
         }
         bottomCheckFrame = window.requestAnimationFrame(function () {
             bottomCheckFrame = null;
+            noteActivity();
             if (Date.now() < ignoreScrollSyncUntil || scrollFigures.length === 0) {
                 return;
             }
@@ -931,6 +999,7 @@
         updateIndicators();
         persistCurrentPage();
         announcePage();
+        noteActivity();
 
         if (readerMode === 'scroll') {
             if (options.scroll !== false) {
@@ -1096,13 +1165,16 @@
         }
     }
 
-    function setFitMode(nextFit, announce) {
+    // fromAuto: an automatic (orientation-based) fit that must not be saved as the user's choice.
+    function setFitMode(nextFit, announce, fromAuto) {
         if (FITS.indexOf(nextFit) === -1) {
             return;
         }
         fitMode = nextFit;
-        prefs.fit = fitMode;
-        savePrefs();
+        if (!fromAuto) {
+            prefs.fit = fitMode;
+            savePrefs();
+        }
         resetZoom();
         if (pagedReader) {
             pagedReader.setAttribute('data-fit', fitMode);
@@ -1117,6 +1189,16 @@
         }
         if (announce) {
             showToast(FIT_LABELS[fitMode]);
+        }
+    }
+
+    function applyAutoFit() {
+        if (userFit()) {
+            return;
+        }
+        var next = autoFit();
+        if (next !== fitMode) {
+            setFitMode(next, false, true);
         }
     }
 
@@ -1198,6 +1280,7 @@
         }
         drawerOpen = true;
         drawerReturnFocus = document.activeElement;
+        resetSheetDrag();
         infoDrawer.classList.add('is-open');
         infoDrawer.setAttribute('aria-hidden', 'false');
         if (infoBackdrop) {
@@ -1217,6 +1300,7 @@
             return;
         }
         drawerOpen = false;
+        resetSheetDrag();
         infoDrawer.classList.remove('is-open');
         infoDrawer.setAttribute('aria-hidden', 'true');
         if (infoBackdrop) {
@@ -1247,6 +1331,99 @@
     }
     if (infoBackdrop) {
         infoBackdrop.addEventListener('click', closeDrawer);
+    }
+
+    // Bottom sheet (phones): drag down from the handle/header, or from the
+    // content when it is scrolled to the top, to close.
+    var sheetDrag = null;
+    var drawerBody = infoDrawer ? infoDrawer.querySelector('.rd-drawer-body') : null;
+
+    function resetSheetDrag() {
+        sheetDrag = null;
+        if (infoDrawer) {
+            infoDrawer.classList.remove('is-dragging');
+            infoDrawer.style.transform = '';
+        }
+        if (infoBackdrop) {
+            infoBackdrop.style.opacity = '';
+        }
+    }
+
+    if (infoDrawer) {
+        infoDrawer.addEventListener('touchstart', function (event) {
+            if (!drawerOpen || !isSheetLayout() || event.touches.length !== 1) {
+                sheetDrag = null;
+                return;
+            }
+            var target = event.target;
+            var inBody = drawerBody && drawerBody.contains(target);
+            if (inBody && drawerBody.scrollTop > 0) {
+                sheetDrag = null;
+                return;
+            }
+            // Leave horizontal gestures on segmented controls / inputs alone.
+            sheetDrag = {
+                startY: event.touches[0].clientY,
+                startX: event.touches[0].clientX,
+                startTime: Date.now(),
+                dy: 0,
+                active: false,
+                fromBody: inBody
+            };
+        }, { passive: true });
+
+        infoDrawer.addEventListener('touchmove', function (event) {
+            if (!sheetDrag || event.touches.length !== 1) {
+                return;
+            }
+            var dy = event.touches[0].clientY - sheetDrag.startY;
+            var dx = event.touches[0].clientX - sheetDrag.startX;
+            if (!sheetDrag.active) {
+                if (Math.abs(dy) < 8 && Math.abs(dx) < 8) {
+                    return;
+                }
+                // Upward or sideways first: it's a scroll, not a dismiss.
+                if (dy <= 0 || Math.abs(dx) > Math.abs(dy)) {
+                    sheetDrag = null;
+                    return;
+                }
+                sheetDrag.active = true;
+                infoDrawer.classList.add('is-dragging');
+            }
+            event.preventDefault();
+            sheetDrag.dy = Math.max(0, dy);
+            infoDrawer.style.transform = 'translateY(' + sheetDrag.dy + 'px)';
+            if (infoBackdrop) {
+                var height = infoDrawer.offsetHeight || 1;
+                infoBackdrop.style.opacity = String(Math.max(0.2, 1 - sheetDrag.dy / height));
+            }
+        }, { passive: false });
+
+        var endSheetDrag = function (event) {
+            if (!sheetDrag) {
+                return;
+            }
+            var state = sheetDrag;
+            sheetDrag = null;
+            if (!state.active) {
+                return;
+            }
+            var elapsed = Math.max(1, Date.now() - state.startTime);
+            var velocity = state.dy / elapsed;
+            var height = infoDrawer.offsetHeight || 400;
+            infoDrawer.classList.remove('is-dragging');
+            if (event.type !== 'touchcancel' && (state.dy > Math.min(120, height * 0.3) || (state.dy > 30 && velocity > 0.5))) {
+                // Transition runs from the dragged position down to closed.
+                closeDrawer();
+            } else {
+                infoDrawer.style.transform = '';
+                if (infoBackdrop) {
+                    infoBackdrop.style.opacity = '';
+                }
+            }
+        };
+        infoDrawer.addEventListener('touchend', endSheetDrag, { passive: true });
+        infoDrawer.addEventListener('touchcancel', endSheetDrag, { passive: true });
     }
 
     // ------------------------------------------------------------------
@@ -1309,6 +1486,10 @@
         document.addEventListener('pointerdown', function (event) {
             if (isOpen(jumpForm) && !jumpForm.contains(event.target) && event.target !== pageIndicator && !(pageIndicator && pageIndicator.contains(event.target))) {
                 closeJump(false);
+                // The tap that dismisses the popover must not also turn the page.
+                if ((pagedReader && pagedReader.contains(event.target)) || (scrollReader && scrollReader.contains(event.target))) {
+                    suppressClickUntil = Date.now() + 500;
+                }
             }
         });
     }
@@ -1316,22 +1497,72 @@
     // ------------------------------------------------------------------
     // Slider + prev/next buttons
     // ------------------------------------------------------------------
+    var SLIDER_THUMB = 22;
+    var scrubHideTimer = null;
+
+    function positionScrubBubble() {
+        if (!pageSlider || !scrubBubble || !sliderWrap) {
+            return;
+        }
+        var max = parseInt(pageSlider.max, 10) || 1;
+        var value = parseInt(pageSlider.value, 10) || 1;
+        var fraction = max > 1 ? (value - 1) / (max - 1) : 0;
+        var width = pageSlider.clientWidth || sliderWrap.clientWidth;
+        var x = SLIDER_THUMB / 2 + fraction * Math.max(0, width - SLIDER_THUMB);
+        // Keep the bubble on screen near the ends of the track.
+        var half = (scrubBubble.offsetWidth || 64) / 2;
+        var wrapRect = sliderWrap.getBoundingClientRect();
+        var minX = half + 6 - wrapRect.left;
+        var maxX = window.innerWidth - half - 6 - wrapRect.left;
+        x = Math.max(minX, Math.min(maxX, x));
+        sliderWrap.style.setProperty('--rd-thumb-x', x + 'px');
+        scrubBubble.textContent = value + ' / ' + total;
+    }
+
+    function startScrub() {
+        if (!sliderWrap || !pageSlider || pageSlider.disabled) {
+            return;
+        }
+        clearTimeout(scrubHideTimer);
+        positionScrubBubble();
+        sliderWrap.classList.add('is-scrubbing');
+    }
+
+    function endScrub(delay) {
+        if (!sliderWrap) {
+            return;
+        }
+        clearTimeout(scrubHideTimer);
+        scrubHideTimer = setTimeout(function () {
+            sliderWrap.classList.remove('is-scrubbing');
+        }, typeof delay === 'number' ? delay : 450);
+    }
+
     if (pageSlider) {
         pageSlider.max = Math.max(total, 1);
+        pageSlider.addEventListener('pointerdown', function () {
+            sliderDragging = true;
+            startScrub();
+        });
         pageSlider.addEventListener('input', function () {
             sliderDragging = true;
             if (currentPageEl) {
                 currentPageEl.textContent = pageSlider.value;
             }
             updateSliderFill();
+            startScrub();
             showChrome();
         });
         pageSlider.addEventListener('change', function () {
             sliderDragging = false;
+            endScrub();
             goToPage(parseInt(pageSlider.value, 10) - 1);
         });
-        pageSlider.addEventListener('pointerup', function () {
-            sliderDragging = false;
+        ['pointerup', 'pointercancel', 'blur'].forEach(function (type) {
+            pageSlider.addEventListener(type, function () {
+                sliderDragging = false;
+                endScrub();
+            });
         });
     }
     if (prevButton) {
@@ -1348,6 +1579,9 @@
         return !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
     }
 
+    // iPhone Safari has no element fullscreen; an installed app is already full screen.
+    var fullscreenAvailable = fullscreenSupported() && !isStandalone();
+
     function isFullscreen() {
         return !!(document.fullscreenElement || document.webkitFullscreenElement);
     }
@@ -1362,10 +1596,20 @@
             icon.className = 'fas ' + (active ? 'fa-compress' : 'fa-expand');
         }
         fullScreenButton.setAttribute('aria-label', active ? 'Exit fullscreen' : 'Enter fullscreen');
+        if (sheetFullscreenButton) {
+            var sheetIcon = sheetFullscreenButton.querySelector('i');
+            var sheetText = sheetFullscreenButton.querySelector('span');
+            if (sheetIcon) {
+                sheetIcon.className = 'fas ' + (active ? 'fa-compress' : 'fa-expand');
+            }
+            if (sheetText) {
+                sheetText.textContent = active ? 'Exit full screen' : 'Full screen';
+            }
+        }
     }
 
     function toggleFullScreen() {
-        if (!fullscreenSupported()) {
+        if (!fullscreenAvailable) {
             return;
         }
         try {
@@ -1383,11 +1627,18 @@
         } catch (error) {}
     }
 
+    if (!fullscreenAvailable) {
+        root.classList.add('rd-no-fullscreen');
+    }
     if (fullScreenButton) {
-        if (!fullscreenSupported()) {
+        if (!fullscreenAvailable) {
             fullScreenButton.hidden = true;
         }
         fullScreenButton.addEventListener('click', toggleFullScreen);
+    }
+    if (sheetFullscreenButton) {
+        sheetFullscreenButton.hidden = !fullscreenAvailable;
+        sheetFullscreenButton.addEventListener('click', toggleFullScreen);
     }
     document.addEventListener('fullscreenchange', updateFullscreenButton);
     document.addEventListener('webkitfullscreenchange', updateFullscreenButton);
@@ -1413,7 +1664,9 @@
         var target = event.target;
 
         if (key === 'Escape') {
-            if (isOpen(jumpForm)) {
+            if (isOpen(gestureHint)) {
+                dismissGestureHint();
+            } else if (isOpen(jumpForm)) {
                 closeJump(true);
             } else if (isOpen(endCard)) {
                 closeEndCard();
@@ -1428,7 +1681,7 @@
             return;
         }
 
-        if (isTypingTarget(target)) {
+        if (isTypingTarget(target) || isOpen(gestureHint)) {
             return;
         }
         // Let focused buttons/links handle Enter and Space themselves.
@@ -1560,6 +1813,18 @@
     var suppressClickUntil = 0;
     var lastCenterTap = 0;
     var centerTapTimer = null;
+    var lastPointerType = 'mouse';
+
+    document.addEventListener('pointerdown', function (event) {
+        lastPointerType = event.pointerType || 'mouse';
+        noteActivity();
+    }, true);
+
+    function inBarBand(clientY) {
+        var topBand = topbar ? topbar.offsetHeight : 0;
+        var bottomBand = bottombar ? bottombar.offsetHeight : 0;
+        return clientY < topBand || clientY > window.innerHeight - bottomBand;
+    }
 
     if (zoomToggleButton) {
         zoomToggleButton.addEventListener('click', function () {
@@ -1571,6 +1836,13 @@
         pagedReader.addEventListener('click', function (event) {
             if (Date.now() < suppressClickUntil) {
                 event.preventDefault();
+                return;
+            }
+            // Touch: with the bars hidden, a tap where a bar lives brings the bars
+            // back instead of turning the page (aiming for the slider is not "next").
+            if (!chromeVisible && lastPointerType !== 'mouse' && inBarBand(event.clientY)) {
+                lastCenterTap = 0;
+                showChrome();
                 return;
             }
             var rect = pagedReader.getBoundingClientRect();
@@ -1806,6 +2078,9 @@
             if (event.target.closest && event.target.closest('a, button')) {
                 return;
             }
+            if (Date.now() < suppressClickUntil) {
+                return;
+            }
             toggleChrome();
         });
     }
@@ -1823,10 +2098,88 @@
     });
 
     window.addEventListener('scroll', onWindowScroll, { passive: true });
-    window.addEventListener('resize', function () {
-        if (isZoomed()) {
-            applyZoom();
+
+    // ------------------------------------------------------------------
+    // Rotation / resize: keep the page, reset zoom, re-apply the auto fit
+    // ------------------------------------------------------------------
+    var viewportW = window.innerWidth;
+    var viewportH = window.innerHeight;
+    var resizeTimer = null;
+    var resizeAnchorPage = -1;
+    var stageScrollFraction = 0;
+
+    if (pagedReader) {
+        pagedReader.addEventListener('scroll', function () {
+            var range = pagedReader.scrollHeight - pagedReader.clientHeight;
+            stageScrollFraction = range > 0 ? pagedReader.scrollTop / range : 0;
+        }, { passive: true });
+    }
+
+    function onViewportSettled() {
+        var width = window.innerWidth;
+        var height = window.innerHeight;
+        var widthChanged = Math.abs(width - viewportW) > 1;
+        var rotated = (width > height) !== (viewportW > viewportH);
+        viewportW = width;
+        viewportH = height;
+        var anchor = resizeAnchorPage;
+        resizeAnchorPage = -1;
+
+        // Height-only changes are the mobile URL bar showing/hiding: leave the reader alone.
+        if (!widthChanged && !rotated) {
+            if (isZoomed()) {
+                applyZoom();
+            }
+            return;
         }
+        if (anchor >= 0 && anchor < total && anchor !== current) {
+            current = anchor;
+            updateIndicators();
+        }
+        resetZoom();
+        var fitBefore = fitMode;
+        applyAutoFit();
+        if (readerMode === 'scroll') {
+            if (fitBefore === fitMode) {
+                scrollToPage(current, false);
+            }
+            // Pages above may still change height as their real aspect ratios load:
+            // re-anchor once more unless the reader has scrolled in the meantime.
+            var anchorIndex = current;
+            var anchorY = window.scrollY;
+            setTimeout(function () {
+                var figure = scrollFigures[anchorIndex];
+                if (readerMode !== 'scroll' || !figure || current !== anchorIndex || Math.abs(window.scrollY - anchorY) > 2) {
+                    return;
+                }
+                if (Math.abs(figure.getBoundingClientRect().top) > 2) {
+                    scrollToPage(anchorIndex, false);
+                }
+            }, 450);
+        } else if (fitMode !== 'contain' && pagedReader && fitBefore === fitMode) {
+            var range = pagedReader.scrollHeight - pagedReader.clientHeight;
+            pagedReader.scrollTop = Math.round(stageScrollFraction * Math.max(0, range));
+        }
+        if (positionScrubBubble && sliderWrap && sliderWrap.classList.contains('is-scrubbing')) {
+            positionScrubBubble();
+        }
+        if (drawerOpen) {
+            resetSheetDrag();
+        }
+        // Bars still auto-hide after the idle delay in the new orientation.
+        if (chromeVisible) {
+            scheduleChromeHide();
+        }
+    }
+
+    window.addEventListener('resize', function () {
+        if (Math.abs(window.innerWidth - viewportW) > 1 && resizeAnchorPage < 0) {
+            // Layout is about to reflow: freeze the current page against scroll sync.
+            resizeAnchorPage = current;
+            ignoreScrollSyncUntil = Date.now() + 600;
+        }
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(onViewportSettled, 150);
     });
     window.addEventListener('hashchange', function () {
         var page = pageFromHash();
@@ -2008,14 +2361,6 @@
         }, [channel.port2]);
     }
 
-    function saveDataEnabled() {
-        try {
-            return !!(navigator.connection && navigator.connection.saveData);
-        } catch (error) {
-            return false;
-        }
-    }
-
     function scheduleOfflineCache() {
         if (total === 0 || !('serviceWorker' in navigator)) {
             setOfflineButtonState('offline', 'Offline reading is not supported in this browser');
@@ -2023,9 +2368,13 @@
         }
         var run = function () {
             checkOfflineStatus();
-            // Data saver on: only save when the reader asks for it.
-            if (!saveDataEnabled()) {
-                setTimeout(requestOfflineCache, 1200);
+            // Data saver / slow network: only save when the reader asks for it.
+            if (!connectionConstrained()) {
+                setTimeout(function () {
+                    if (!connectionConstrained()) {
+                        requestOfflineCache();
+                    }
+                }, 1200);
             }
         };
         if (serviceWorkerController()) {
@@ -2061,6 +2410,175 @@
     window.addEventListener('online', checkOfflineStatus);
 
     // ------------------------------------------------------------------
+    // Data saver note
+    // ------------------------------------------------------------------
+    function updateDataSaverNote() {
+        if (!dataSaverNote) {
+            return;
+        }
+        var info = connectionInfo();
+        dataSaverNote.hidden = !info.constrained;
+        if (info.constrained) {
+            var lead = info.saveData ? 'Data saver is on' : 'Slow connection';
+            dataSaverNote.innerHTML = '<i class="fas fa-leaf" aria-hidden="true"></i> <span></span>';
+            dataSaverNote.querySelector('span').textContent = lead +
+                ': only the next page is loaded ahead, and comics are saved for offline only when you tap Save.';
+        }
+    }
+
+    try {
+        if (navigator.connection && typeof navigator.connection.addEventListener === 'function') {
+            navigator.connection.addEventListener('change', updateDataSaverNote);
+        }
+    } catch (error) {}
+
+    // ------------------------------------------------------------------
+    // Screen Wake Lock ("Keep screen on", default on)
+    // ------------------------------------------------------------------
+    var WAKE_IDLE_LIMIT = 10 * 60 * 1000;
+    var wakeLockSupported = false;
+    try {
+        wakeLockSupported = !!(navigator.wakeLock && typeof navigator.wakeLock.request === 'function');
+    } catch (error) {}
+    var keepAwake = prefs.keepAwake !== false;
+    var wakeSentinel = null;
+    var wakePending = false;
+    var lastActivityAt = Date.now();
+
+    function acquireWakeLock() {
+        if (!wakeLockSupported || !keepAwake || wakeSentinel || wakePending || document.visibilityState !== 'visible') {
+            return;
+        }
+        wakePending = true;
+        var request;
+        try {
+            request = navigator.wakeLock.request('screen');
+        } catch (error) {
+            wakePending = false;
+            return;
+        }
+        Promise.resolve(request).then(function (sentinel) {
+            wakePending = false;
+            if (!sentinel) {
+                return;
+            }
+            if (!keepAwake || document.visibilityState !== 'visible') {
+                sentinel.release().catch(function () {});
+                return;
+            }
+            wakeSentinel = sentinel;
+            sentinel.addEventListener('release', function () {
+                if (wakeSentinel === sentinel) {
+                    wakeSentinel = null;
+                }
+            });
+        }, function () {
+            wakePending = false;
+        });
+    }
+
+    function releaseWakeLock() {
+        var sentinel = wakeSentinel;
+        wakeSentinel = null;
+        if (sentinel) {
+            try {
+                sentinel.release().catch(function () {});
+            } catch (error) {}
+        }
+    }
+
+    // Called on page turns, taps, keys and scrolling: re-takes the lock after an idle release.
+    function noteActivity() {
+        lastActivityAt = Date.now();
+        if (keepAwake && !wakeSentinel) {
+            acquireWakeLock();
+        }
+    }
+
+    if (wakeLockSupported) {
+        document.addEventListener('visibilitychange', function () {
+            if (document.visibilityState === 'visible') {
+                lastActivityAt = Date.now();
+                acquireWakeLock();
+            } else {
+                releaseWakeLock();
+            }
+        });
+        // Walked away from the device: let the screen sleep after a long idle period.
+        setInterval(function () {
+            if (wakeSentinel && Date.now() - lastActivityAt > WAKE_IDLE_LIMIT) {
+                releaseWakeLock();
+            }
+        }, 30000);
+    }
+
+    if (wakeLockToggle) {
+        wakeLockToggle.checked = keepAwake && wakeLockSupported;
+        if (!wakeLockSupported) {
+            wakeLockToggle.disabled = true;
+            if (wakeLockNote) {
+                wakeLockNote.textContent = 'Not supported in this browser.';
+            }
+        }
+        wakeLockToggle.addEventListener('change', function () {
+            keepAwake = wakeLockToggle.checked;
+            prefs.keepAwake = keepAwake;
+            savePrefs();
+            if (keepAwake) {
+                noteActivity();
+            } else {
+                releaseWakeLock();
+            }
+            showToast(keepAwake ? 'Screen stays on while reading' : 'Screen can turn off');
+        });
+    }
+
+    // ------------------------------------------------------------------
+    // First-run gesture hint (touch screens, shown once)
+    // ------------------------------------------------------------------
+    var GESTURE_HINT_KEY = 'comicroom.reader.gestureHintSeen';
+    var gestureHintReturnFocus = null;
+
+    function dismissGestureHint() {
+        if (!isOpen(gestureHint)) {
+            return;
+        }
+        gestureHint.hidden = true;
+        storageSet(GESTURE_HINT_KEY, '1');
+        // A dismissing tap must not reach the page underneath.
+        suppressClickUntil = Date.now() + 400;
+        if (gestureHintReturnFocus && typeof gestureHintReturnFocus.focus === 'function' && document.contains(gestureHintReturnFocus)) {
+            gestureHintReturnFocus.focus({ preventScroll: true });
+        }
+        gestureHintReturnFocus = null;
+        scheduleChromeHide();
+    }
+
+    function maybeShowGestureHint() {
+        if (!gestureHint || total < 2 || readerMode !== 'paged' || !isTouchUi() || storageGet(GESTURE_HINT_KEY)) {
+            return;
+        }
+        if (drawerOpen || isOpen(endCard)) {
+            return;
+        }
+        gestureHintReturnFocus = document.activeElement;
+        gestureHint.hidden = false;
+        if (gestureHintClose) {
+            gestureHintClose.focus({ preventScroll: true });
+        }
+    }
+
+    if (gestureHint) {
+        gestureHint.addEventListener('click', function (event) {
+            event.preventDefault();
+            dismissGestureHint();
+        });
+        gestureHint.addEventListener('touchmove', function (event) {
+            event.preventDefault();
+        }, { passive: false });
+    }
+
+    // ------------------------------------------------------------------
     // Init
     // ------------------------------------------------------------------
     if (pagedReader) {
@@ -2079,4 +2597,7 @@
     persistCurrentPage();
     scheduleChromeHide();
     scheduleOfflineCache();
+    updateDataSaverNote();
+    acquireWakeLock();
+    setTimeout(maybeShowGestureHint, 700);
 })();

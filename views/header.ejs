@@ -2,6 +2,9 @@
   var isLoggedIn = typeof userData != 'undefined' && userData != null;
   var isAdmin = typeof isAdminUser !== 'undefined' && isAdminUser;
   var currentKeyword = (typeof searchKeywords !== 'undefined' && searchKeywords) ? searchKeywords : '';
+  var accountName = isLoggedIn && userData.username ? String(userData.username) : '';
+  var accountEmail = isLoggedIn && userData.email ? String(userData.email) : '';
+  var accountInitial = accountName ? accountName.charAt(0).toUpperCase() : '';
 %><!DOCTYPE html>
 <html lang="en">
 
@@ -20,41 +23,23 @@
         <span>ComicRoom</span>
       </a>
 
-      <% if (isLoggedIn) { %>
-      <div class="cr-nav-quick">
-        <div id="uploadNotification" class="position-relative" style="display: none;">
-          <button type="button" id="notificationToggle" class="cr-icon-btn" onclick="toggleNotificationDropdown()"
-            aria-label="Upload notifications" aria-haspopup="true" aria-expanded="false" aria-controls="notificationDropdown">
-            <i class="fas fa-bell" aria-hidden="true"></i>
-            <span id="notificationBadge" class="cr-badge" style="display: none;">0</span>
-          </button>
-          <div id="notificationDropdown" class="cr-notify-panel" role="region" aria-label="Upload notifications" style="display: none;">
-            <h2>Upload notifications</h2>
-            <div id="notificationList"></div>
-            <button type="button" class="btn btn-sm cr-btn-ghost w-100 mt-1" onclick="clearNotifications()">Clear all</button>
-          </div>
-        </div>
-      </div>
-      <% } %>
-
-      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#crNavbar"
-        aria-controls="crNavbar" aria-expanded="false" aria-label="Toggle navigation">
-        <span class="navbar-toggler-icon"></span>
-      </button>
-
+      <%# Desktop navigation (>= 992px). Phones and tablets use the bottom tab bar + account sheet instead. %>
       <div class="collapse navbar-collapse" id="crNavbar">
         <ul class="navbar-nav" id="crNavLinks">
           <li class="nav-item">
-            <a class="nav-link" href="/comic" data-nav="gallery"><i class="fas fa-th-large" aria-hidden="true"></i> Gallery</a>
+            <a class="nav-link" href="/comic" data-nav="gallery" title="Gallery"><i class="fas fa-th-large" aria-hidden="true"></i> Gallery</a>
           </li>
           <% if (isLoggedIn) { %>
           <li class="nav-item">
-            <a class="nav-link" href="/onread" data-nav="reading"><i class="fas fa-book-open" aria-hidden="true"></i> Reading</a>
+            <a class="nav-link" href="/onread" data-nav="reading" title="Reading"><i class="fas fa-book-open" aria-hidden="true"></i> Reading</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/comic/uploads" data-nav="uploads" title="Uploads"><i class="fas fa-cloud-upload-alt" aria-hidden="true"></i> Uploads</a>
           </li>
           <% } %>
           <% if (isAdmin) { %>
           <li class="nav-item">
-            <a class="nav-link" href="/admin" data-nav="admin"><i class="fas fa-cog" aria-hidden="true"></i> Admin</a>
+            <a class="nav-link" href="/admin" data-nav="admin" title="Admin"><i class="fas fa-cog" aria-hidden="true"></i> Admin</a>
           </li>
           <% } %>
         </ul>
@@ -72,32 +57,168 @@
             <a class="btn cr-btn-accent" href="/register" data-nav="register"><i class="fas fa-user-plus" aria-hidden="true"></i> Sign up</a>
           <% } else { %>
             <a class="btn cr-btn-accent" href="/comic/upload" data-nav="upload"><i class="fas fa-file-upload" aria-hidden="true"></i> Upload</a>
-            <a class="btn cr-btn-ghost" href="/logout"><i class="fas fa-sign-out-alt" aria-hidden="true"></i> Log out</a>
           <% } %>
         </div>
       </div>
+
+      <div class="cr-nav-quick">
+        <% if (isLoggedIn) { %>
+        <%# Desktop bell. On phones/tablets the same state is shown as a badge on the Uploads tab. %>
+        <div class="cr-bell">
+          <div id="uploadNotification" class="position-relative" style="display: none;">
+            <button type="button" id="notificationToggle" class="cr-icon-btn" onclick="toggleNotificationDropdown()"
+              aria-label="Upload notifications" aria-haspopup="true" aria-expanded="false" aria-controls="notificationDropdown">
+              <i class="fas fa-bell" aria-hidden="true"></i>
+              <span id="notificationBadge" class="cr-badge" style="display: none;">0</span>
+            </button>
+            <div id="notificationDropdown" class="cr-notify-panel" role="region" aria-label="Upload notifications" style="display: none;">
+              <h2>Upload notifications</h2>
+              <p id="notificationActive" class="cr-notify-active" hidden></p>
+              <div id="notificationList"></div>
+              <div class="cr-notify-actions">
+                <a class="btn btn-sm cr-btn-ghost" href="/comic/uploads" id="notificationAll">View all uploads</a>
+                <button type="button" id="notificationClear" class="btn btn-sm cr-btn-ghost" onclick="clearNotifications()">Clear all</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <% } %>
+        <button type="button" id="crAccountToggle" class="cr-icon-btn cr-account-btn" aria-haspopup="dialog" aria-controls="crAccountSheet"
+          aria-expanded="false" aria-label="<%= isLoggedIn ? 'Account menu' : 'Menu' %>">
+          <% if (accountInitial) { %>
+            <span class="cr-avatar" aria-hidden="true"><%= accountInitial %></span>
+          <% } else if (isLoggedIn) { %>
+            <i class="fas fa-user-circle" aria-hidden="true"></i>
+          <% } else { %>
+            <i class="fas fa-bars" aria-hidden="true"></i>
+          <% } %>
+        </button>
+      </div>
     </nav>
-    <script>
-      (function () {
-        var path = window.location.pathname;
-        var key = 'gallery';
-        if (/^\/onread/.test(path)) key = 'reading';
-        else if (/^\/admin/.test(path)) key = 'admin';
-        else if (/^\/comic\/upload/.test(path)) key = 'upload';
-        else if (/^\/login/.test(path)) key = 'login';
-        else if (/^\/register/.test(path)) key = 'register';
-        else if (!/^\/(comic(\/|$)|$)/.test(path)) key = '';
-        if (key) {
-          var link = document.querySelector('.cr-header [data-nav="' + key + '"]');
-          if (link) {
+  </header>
+
+  <%# Account / app menu: bottom sheet on phones, panel under the header on desktop. %>
+  <dialog id="crAccountSheet" class="cr-sheet cr-sheet-account" aria-labelledby="crAccountTitle">
+    <div class="cr-sheet-inner">
+      <div class="cr-sheet-head">
+        <% if (isLoggedIn) { %>
+          <span class="cr-avatar cr-avatar-lg" aria-hidden="true"><% if (accountInitial) { %><%= accountInitial %><% } else { %><i class="fas fa-user"></i><% } %></span>
+          <div class="cr-sheet-title">
+            <h2 id="crAccountTitle"><%= accountName || 'Your account' %></h2>
+            <% if (accountEmail) { %><p><%= accountEmail %></p><% } %>
+          </div>
+        <% } else { %>
+          <div class="cr-sheet-title">
+            <h2 id="crAccountTitle">ComicRoom</h2>
+            <p>Log in to upload comics and keep your place.</p>
+          </div>
+        <% } %>
+        <button type="button" class="cr-icon-btn" data-cr-close aria-label="Close menu"><i class="fas fa-times" aria-hidden="true"></i></button>
+      </div>
+      <ul class="cr-menu">
+        <% if (!isLoggedIn) { %>
+          <li><a class="cr-menu-item" href="/login" data-nav="login"><i class="fas fa-sign-in-alt" aria-hidden="true"></i> Log in</a></li>
+          <li><a class="cr-menu-item" href="/register" data-nav="register"><i class="fas fa-user-plus" aria-hidden="true"></i> Create an account</a></li>
+        <% } %>
+        <% if (isAdmin) { %>
+          <li><a class="cr-menu-item" href="/admin" data-nav="admin"><i class="fas fa-cog" aria-hidden="true"></i> Admin</a></li>
+        <% } %>
+        <li id="crInstallItem" hidden>
+          <button type="button" id="crInstallBtn" class="cr-menu-item"><i class="fas fa-download" aria-hidden="true"></i> Install app</button>
+        </li>
+        <li id="crInstallHint" class="cr-menu-hint" hidden>
+          <i class="fas fa-mobile-alt" aria-hidden="true"></i>
+          <span>Install ComicRoom: tap <strong>Share</strong> <i class="fas fa-share-square" aria-hidden="true"></i>, then <strong>Add to Home Screen</strong>.</span>
+        </li>
+        <li>
+          <a class="cr-menu-item" href="https://github.com/artanvrajolli/ComicRoom" target="_blank" rel="noopener noreferrer">
+            <i class="fab fa-github" aria-hidden="true"></i> GitHub <span class="visually-hidden">(opens in a new tab)</span>
+            <i class="fas fa-external-link-alt cr-menu-trail" aria-hidden="true"></i>
+          </a>
+        </li>
+        <% if (isLoggedIn) { %>
+          <li>
+            <form method="post" action="/logout" class="m-0">
+              <button type="submit" class="cr-menu-item cr-menu-danger"><i class="fas fa-sign-out-alt" aria-hidden="true"></i> Log out</button>
+            </form>
+          </li>
+        <% } %>
+      </ul>
+    </div>
+  </dialog>
+
+  <%# Full-width search sheet opened from the Search tab. Same action logic as #searchOption. %>
+  <dialog id="crSearchSheet" class="cr-sheet cr-sheet-search" aria-label="Search">
+    <div class="cr-sheet-inner">
+      <form id="crSearchForm" class="cr-search-row" role="search" method="GET" action="/comic">
+        <div class="cr-search">
+          <label for="crSearchInput" class="visually-hidden">Search comics</label>
+          <i class="fas fa-search cr-search-icon" aria-hidden="true"></i>
+          <input name="keyword" id="crSearchInput" type="search" class="form-control" placeholder="Title, author, description"
+            value="<%= currentKeyword %>" autocomplete="off" enterkeyhint="search" aria-describedby="crSearchScope">
+        </div>
+        <button type="button" class="btn cr-btn-text" data-cr-close>Cancel</button>
+      </form>
+      <p id="crSearchScope" class="cr-sheet-note">Searching the gallery</p>
+    </div>
+  </dialog>
+
+  <%# Bottom tab bar (< 992px). Height is exposed as --cr-bottom-nav-h in comic.css. %>
+  <nav id="crTabbar" class="cr-tabbar" aria-label="Primary">
+    <a class="cr-tab" href="/comic" data-nav="gallery">
+      <span class="cr-tab-icon"><i class="fas fa-th-large" aria-hidden="true"></i></span><span class="cr-tab-label">Gallery</span>
+    </a>
+    <% if (isLoggedIn) { %>
+    <a class="cr-tab" href="/onread" data-nav="reading">
+      <span class="cr-tab-icon"><i class="fas fa-book-open" aria-hidden="true"></i></span><span class="cr-tab-label">Reading</span>
+    </a>
+    <a class="cr-tab cr-tab-primary" href="/comic/upload" data-nav="upload">
+      <span class="cr-tab-icon"><i class="fas fa-plus" aria-hidden="true"></i></span><span class="cr-tab-label">Upload</span>
+    </a>
+    <a class="cr-tab" href="/comic/uploads" data-nav="uploads" id="crUploadsTab">
+      <span class="cr-tab-icon"><i class="fas fa-cloud-upload-alt" aria-hidden="true"></i><span id="crUploadsBadge" class="cr-badge" aria-hidden="true" hidden></span></span><span class="cr-tab-label">Uploads</span>
+    </a>
+    <% } %>
+    <button type="button" class="cr-tab" id="crSearchTab" data-nav="search" aria-haspopup="dialog" aria-controls="crSearchSheet" aria-expanded="false">
+      <span class="cr-tab-icon"><i class="fas fa-search" aria-hidden="true"></i></span><span class="cr-tab-label">Search</span>
+    </button>
+    <% if (!isLoggedIn) { %>
+    <a class="cr-tab" href="/login" data-nav="login">
+      <span class="cr-tab-icon"><i class="fas fa-sign-in-alt" aria-hidden="true"></i></span><span class="cr-tab-label">Log in</span>
+    </a>
+    <% } %>
+  </nav>
+
+  <script>
+    (function () {
+      var path = window.location.pathname;
+      var key = 'gallery';
+      if (/^\/onread/.test(path)) key = 'reading';
+      else if (/^\/admin/.test(path)) key = 'admin';
+      else if (/^\/comic\/(uploads|status)(\/|$)/.test(path)) key = 'uploads';
+      else if (/^\/comic\/upload(\/|$)/.test(path)) key = 'upload';
+      else if (/^\/(login|register)/.test(path)) key = /^\/register/.test(path) ? 'register' : 'login';
+      else if (!/^\/(comic(\/|$)|$)/.test(path)) key = '';
+      if (key) {
+        var keys = key === 'register' ? ['register', 'login'] : [key];
+        keys.forEach(function (k, i) {
+          // The Log in tab also stands for /register (there is no Sign up tab).
+          var selector = i === 0 ? '[data-nav="' + k + '"]' : '.cr-tab[data-nav="' + k + '"]';
+          Array.prototype.forEach.call(document.querySelectorAll(selector), function (link) {
             link.classList.add('active');
             link.setAttribute('aria-current', 'page');
-          }
-        }
-        // Search the list the user is looking at: reading list on /onread, gallery everywhere else.
-        document.getElementById('searchOption').setAttribute('action', key === 'reading' ? '/onread' : '/comic');
-      })();
-    </script>
-  </header>
+          });
+        });
+      }
+      // Search the list the user is looking at: reading list on /onread, gallery everywhere else.
+      var action = key === 'reading' ? '/onread' : '/comic';
+      ['searchOption', 'crSearchForm'].forEach(function (id) {
+        var form = document.getElementById(id);
+        if (form) form.setAttribute('action', action);
+      });
+      var scope = document.getElementById('crSearchScope');
+      if (scope) scope.textContent = key === 'reading' ? 'Searching your reading list' : 'Searching the gallery';
+    })();
+  </script>
 
   <main id="main-content" class="cr-main" tabindex="-1">

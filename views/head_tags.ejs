@@ -7,18 +7,24 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ComicRoom">
+<meta name="format-detection" content="telephone=no">
 <link rel="manifest" href="/public/manifest.webmanifest">
 <link rel="icon" type="image/png" href="/public/images/favicon.png">
 <link rel="apple-touch-icon" href="/public/icons/apple-touch-icon.png">
 <link rel="preload" href="/public/css/webfonts/fa-solid-900.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/public/css/bootstrap/css/bootstrap.min.css">
 <link rel="stylesheet" href="/public/css/css/all.min.css">
-<link rel="stylesheet" href="/public/css/comic.css?v=2">
+<link rel="stylesheet" href="/public/css/comic.css?v=3">
 <%# Bootstrap + jQuery stay synchronous: several views run inline scripts that use them while parsing. %>
 <script src="/public/css/bootstrap/js/bootstrap.bundle.min.js"></script>
 <script src="/public/script/jQuery.js"></script>
-<script src="/public/script/header.js?v=2" defer></script>
+<script src="/public/script/header.js?v=3" defer></script>
 <script>
+    // Keep the install prompt for the "Install app" menu item (header.js may run after the event fires).
+    window.addEventListener('beforeinstallprompt', function (event) {
+        event.preventDefault();
+        window.__crInstallPrompt = event;
+    });
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', function () {
             navigator.serviceWorker.register('/sw.js').catch(function () {});

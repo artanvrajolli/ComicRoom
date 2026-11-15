@@ -13,7 +13,7 @@ const SequelizeStore = require('connect-session-sequelize')(session.Store);
 const dbIndexes = require('./utils/dbIndexes');
 const thumbnails = require('./utils/thumbnails');
 const comic_table = require('./model/m_comic');
-const { serveComicCover } = require('./controller/c_comic');
+const { serveComicCover, servePageThumbnail } = require('./controller/c_comic');
 
 const PORT = process.env.PORT || 8082;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -38,6 +38,8 @@ app.get('/sw.js', (req, res) => {
 
 // cover thumbnails (same handler is also registered in routers/r_comic.js)
 app.get(['/comic/cover/:id', '/cover/:id'], serveComicCover);
+// page thumbnails (?file=<page relativePath>; also registered in routers/r_comic.js)
+app.get(['/comic/page-thumb/:id', '/page-thumb/:id'], servePageThumbnail);
 
 // upload temp files are never public
 app.use('/public/tmp', (req, res) => res.status(404).end());
@@ -113,7 +115,7 @@ app.use(express.json({
 // Increase server timeout for large uploads
 app.use((req, res, next) => {
     // Set longer timeout for upload endpoints
-    if (req.url.includes('/upload')) {
+    if (req.url.includes('/upload') || req.url.includes('/share-target')) {
         req.setTimeout(15 * 60 * 1000); // 15 minutes
         res.setTimeout(15 * 60 * 1000); // 15 minutes
     }

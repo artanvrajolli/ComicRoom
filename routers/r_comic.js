@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const {addComicPages, deleteComicPage, PostComicUpload ,UpdateComicDetails ,showcomic_id,showgallery_comic,serveComicCover, checkIfisOnline, getUpdateComicDetails, getComicAiMetadata, getUploadStatus, getUploadStatusAPI, moveComicPage, PostChunkedUpload} = require('../controller/c_comic')
+const {addComicPages, deleteComicPage, PostComicUpload ,UpdateComicDetails ,showcomic_id,showgallery_comic,serveComicCover, checkIfisOnline, getUpdateComicDetails, getComicAiMetadata, getUploadStatus, getUploadStatusAPI, moveComicPage, PostChunkedUpload, requireLoginJson, servePageThumbnail, getUploadsPage, dismissUploadJob, PostShareTarget} = require('../controller/c_comic')
 
 //Show gallery
 router.get("/",showgallery_comic)
@@ -7,6 +7,8 @@ router.get("/",showgallery_comic)
 router.get("/show/:id",showcomic_id)
 // Cover thumbnail (must stay above the /:folderID/:id_db routes)
 router.get("/cover/:id",serveComicCover)
+// Page thumbnail: /page-thumb/:id?file=<page relativePath> (also above /:folderID/:id_db)
+router.get("/page-thumb/:id",servePageThumbnail)
 
 router.get("/upload",checkIfisOnline,(req,res)=>{
     var msg = req.session.msg;
@@ -22,6 +24,13 @@ router.post("/upload-chunk", checkIfisOnline, PostChunkedUpload)
 
 // upload status page
 router.get("/status/:jobId", checkIfisOnline, getUploadStatus)
+
+// the user's recent uploads
+router.get("/uploads", checkIfisOnline, getUploadsPage)
+router.post("/uploads/:jobId/dismiss", requireLoginJson, dismissUploadJob)
+
+// Web Share Target (installed PWA): multipart, file field "comic"
+router.post("/share-target", PostShareTarget)
 
 // comic details get
 router.get("/:folderID/:id_db",checkIfisOnline,getUpdateComicDetails)

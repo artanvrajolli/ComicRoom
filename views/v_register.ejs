@@ -27,25 +27,25 @@
       <div class="mb-3">
         <label for="registerUsername" class="form-label">Username</label>
         <input id="registerUsername" class="form-control" name="username" value="<%= usernameValue %>" type="text"
-          autocomplete="username" autocapitalize="none" spellcheck="false" pattern="[a-zA-Z0-9]+" required
+          autocomplete="username" autocapitalize="none" spellcheck="false" pattern="[a-zA-Z0-9]+" enterkeyhint="next" required
           aria-describedby="usernameHelp">
         <div id="usernameHelp" class="form-text">Letters and numbers only.</div>
       </div>
       <div class="mb-3">
         <label for="registerEmail" class="form-label">Email</label>
         <input id="registerEmail" class="form-control" name="email" value="<%= emailValue %>" type="email"
-          autocomplete="email" autocapitalize="none" spellcheck="false" required>
+          autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" enterkeyhint="next" required>
       </div>
       <div class="mb-3">
         <label for="original_password" class="form-label">Password</label>
         <input id="original_password" class="form-control" name="password" value="" type="password"
-          autocomplete="new-password" minlength="6" required aria-describedby="passwordHelp">
+          autocomplete="new-password" minlength="6" enterkeyhint="next" required aria-describedby="passwordHelp">
         <div id="passwordHelp" class="form-text">At least 6 characters.</div>
       </div>
       <div class="mb-4">
         <label for="confirm_password" class="form-label">Confirm password</label>
         <input id="confirm_password" class="form-control" value="" type="password" autocomplete="new-password"
-          required aria-describedby="confirmHelp">
+          enterkeyhint="go" required aria-describedby="confirmHelp">
         <div id="confirmHelp" class="invalid-feedback">Passwords do not match.</div>
       </div>
       <button id="signupButton" type="submit" class="btn cr-btn-accent w-100"><i class="fas fa-user-plus" aria-hidden="true"></i> Sign up</button>

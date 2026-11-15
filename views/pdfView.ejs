@@ -4,10 +4,10 @@
     var rdPdfUrl = '/public/uploads/' + encodeURIComponent(savedFolder) + '/' + String(pdfFile).split('/').map(encodeURIComponent).join('/');
     var rdPdfName = String(pdfFile).split('/').pop();
 %><!DOCTYPE html>
-<html lang="en" class="rd-root">
+<html lang="en" class="rd-root rd-pdf-root">
 <head>
     <%-include("head_tags")%>
-    <link rel="stylesheet" href="/public/css/reader.css?v=20261115r1">
+    <link rel="stylesheet" href="/public/css/reader.css?v=20261116m1">
     <title>ComicRoom - <%= rdTitle %></title>
 </head>
 <body class="reader-body">
@@ -16,15 +16,16 @@
             <a class="rd-btn" href="/comic" aria-label="Back to gallery" title="Back to gallery">
                 <i class="fas fa-arrow-left" aria-hidden="true"></i>
             </a>
-            <div class="rd-title">
+            <div class="rd-title has-sub">
                 <h1 class="rd-title-main" title="<%= rdTitle %>"><%= rdTitle %></h1>
                 <span class="rd-title-sub"><%= rdAuthor || 'PDF' %></span>
             </div>
+            <%# Phones (< 480px): open + download only; edit and fullscreen need a wider screen. %>
             <div class="rd-actions" role="toolbar" aria-label="PDF options">
                 <a class="rd-btn" href="<%= rdPdfUrl %>" target="_blank" rel="noopener" aria-label="Open PDF in a new tab" title="Open in new tab">
                     <i class="fas fa-external-link-alt" aria-hidden="true"></i>
                 </a>
-                <a class="rd-btn rd-hide-sm" href="<%= rdPdfUrl %>" download="<%= rdPdfName %>" aria-label="Download PDF" title="Download PDF">
+                <a class="rd-btn" href="<%= rdPdfUrl %>" download="<%= rdPdfName %>" aria-label="Download PDF" title="Download PDF">
                     <i class="fas fa-download" aria-hidden="true"></i>
                 </a>
                 <% if (canEditComic) { %>
@@ -32,7 +33,7 @@
                     <i class="fas fa-edit" aria-hidden="true"></i>
                 </a>
                 <% } %>
-                <button id="pdfFullscreen" class="rd-btn" type="button" aria-label="Enter fullscreen" title="Fullscreen (F)" hidden>
+                <button id="pdfFullscreen" class="rd-btn rd-wide-only rd-fs" type="button" aria-label="Enter fullscreen" title="Fullscreen (F)" hidden>
                     <i class="fas fa-expand" aria-hidden="true"></i>
                 </button>
             </div>
@@ -61,7 +62,12 @@
 
         var shell = document.getElementById('pdfShell');
         var button = document.getElementById('pdfFullscreen');
-        var supported = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+        var standalone = false;
+        try {
+            standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+        } catch (error) {}
+        // No Fullscreen API on iPhone Safari; an installed app is already full screen.
+        var supported = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled) && !standalone;
         function isFullscreen() {
             return !!(document.fullscreenElement || document.webkitFullscreenElement);
         }

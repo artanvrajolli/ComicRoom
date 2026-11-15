@@ -1,14 +1,25 @@
 const CACHE_PREFIX = 'comicroom-';
 // Bump SHELL_CACHE when shell assets change. Do NOT bump PAGES/IMAGE/META:
 // that would wipe comics users saved for offline reading.
-const SHELL_CACHE = 'comicroom-shell-v2';
+const SHELL_CACHE = 'comicroom-shell-v3';
 const PAGES_CACHE = 'comicroom-pages-v1';
 const IMAGE_CACHE = 'comicroom-images-v1';
 const META_CACHE = 'comicroom-meta-v1';
 const COVER_CACHE = 'comicroom-covers-v1';
-const ACTIVE_CACHES = [SHELL_CACHE, PAGES_CACHE, IMAGE_CACHE, META_CACHE, COVER_CACHE];
+const THUMB_CACHE = 'comicroom-thumbs-v1';
+const ACTIVE_CACHES = [SHELL_CACHE, PAGES_CACHE, IMAGE_CACHE, META_CACHE, COVER_CACHE, THUMB_CACHE];
 const MAX_COVER_ENTRIES = 300;
+const MAX_THUMB_ENTRIES = 400;
 const COVER_PATH_REGEX = /^\/(?:comic\/)?cover\/\d+\/?$/;
+// Small WebP page thumbnails: /comic/page-thumb/<id>?file=... (the query picks the page).
+const PAGE_THUMB_PATH_REGEX = /^\/comic\/page-thumb\/\d+\/?$/;
+// Upload flow and job status are live data: never answered from or written to a cache.
+const NEVER_CACHE_REGEXES = [
+    /^\/comic\/uploads?(?:\/|$)/,
+    /^\/comic\/upload-chunk(?:\/|$)/,
+    /^\/comic\/status\//,
+    /^\/comic\/share-target(?:\/|$)/
+];
 // Only these HTML pages are cached for offline use. Admin, upload, login,
 // register, edit and status pages always go to the network and are never stored.
 const CACHEABLE_PAGE_REGEXES = [
@@ -21,20 +32,23 @@ const OFFLINE_URL = '/public/offline.html';
 const META_KEY = '/__offline__/comics.json';
 const MAX_OFFLINE_COMICS = 5;
 const CACHE_CONCURRENCY = 4;
+// Keep these URLs identical to what the pages request (views/head_tags.ejs,
+// views/comicView.ejs, views/pdfView.ejs), including the ?v= query strings,
+// so the precached copies are hits. Offline, any cached version of an asset
+// is used as a fallback (see handleAsset).
 const SHELL_ASSETS = [
     OFFLINE_URL,
     '/public/manifest.webmanifest',
     '/public/css/bootstrap/css/bootstrap.min.css',
     '/public/css/bootstrap/js/bootstrap.bundle.min.js',
-    '/public/css/comic.css',
-    '/public/css/reader.css',
-    '/public/script/viewComic.js',
-    '/public/css/css/all.css',
+    '/public/css/comic.css?v=3',
+    '/public/css/reader.css?v=20261116m1',
+    '/public/script/viewComic.js?v=20261116m1',
     '/public/css/css/all.min.css',
     '/public/css/webfonts/fa-solid-900.woff2',
     '/public/css/webfonts/fa-regular-400.woff2',
     '/public/css/webfonts/fa-brands-400.woff2',
-    '/public/script/header.js',
+    '/public/script/header.js?v=3',
     '/public/script/jQuery.js',
     '/public/icons/icon-192.png',
     '/public/icons/icon-512.png',
@@ -176,7 +190,7 @@ async function cacheComic(data, port) {
                 const existing = await imageCache.match(url);
                 if (!existing) {
                     const response = await fetch(url);
-                    if (!response || !response.ok) {
+                    if (!isCacheableResponse(response)) {
                         throw new Error('HTTP ' + (response ? response.status : 'error'));
                     }
                     await imageCache.put(url, response.clone());
@@ -203,7 +217,9 @@ async function cacheComic(data, port) {
     if (data.pageUrl) {
         try {
             const pageResponse = await fetch(data.pageUrl);
-            if (pageResponse && pageResponse.ok) {
+            const pageType = pageResponse ? (pageResponse.headers.get('content-type') || '') : '';
+            // A redirect here means the session expired (login page): never store it as the comic.
+            if (isCacheableResponse(pageResponse) && pageType.indexOf('text/html') !== -1) {
                 await pageCache.put(data.pageUrl, pageResponse.clone());
             }
         } catch (error) {}
@@ -217,7 +233,7 @@ async function cacheComic(data, port) {
                 const existingAsset = await shellCache.match(assetUrl);
                 if (!existingAsset) {
                     const assetResponse = await fetch(assetUrl);
-                    if (assetResponse && assetResponse.ok) {
+                    if (isCacheableResponse(assetResponse)) {
                         await shellCache.put(assetUrl, assetResponse.clone());
                     }
                 }
@@ -302,8 +318,10 @@ async function trimCache(cache, maxEntries) {
     }
 }
 
+// Only plain 200-range, same-origin, non-partial, non-redirected responses are stored.
 function isCacheableResponse(response) {
-    return !!response && response.ok && response.status !== 206 && (response.type === 'basic' || response.type === 'default');
+    return !!response && response.ok && !response.redirected && response.status !== 206 &&
+        (response.type === 'basic' || response.type === 'default');
 }
 
 // Versioned (?v=...) assets and fonts/icons never change under the same URL:
@@ -341,16 +359,17 @@ async function handleAsset(event, request) {
     }
 }
 
-// Gallery cover thumbnails (/comic/cover/<id>): stale-while-revalidate with a
-// capped number of entries so covers seen online still show offline.
-async function handleCover(event, request) {
-    const cache = await caches.open(COVER_CACHE);
+// Gallery covers (/comic/cover/<id>) and page thumbnails (/comic/page-thumb/<id>?file=...):
+// stale-while-revalidate with a capped number of entries so images seen online
+// still show offline.
+async function staleWhileRevalidateImage(event, request, cacheName, maxEntries, ignoreSearchFallback) {
+    const cache = await caches.open(cacheName);
     const cached = await cache.match(request);
 
     const network = fetch(request).then(async function (response) {
         if (isCacheableResponse(response)) {
             if (await safePut(cache, request, response.clone())) {
-                await trimCache(cache, MAX_COVER_ENTRIES);
+                await trimCache(cache, maxEntries);
             }
         }
         return response;
@@ -364,12 +383,21 @@ async function handleCover(event, request) {
     try {
         return await network;
     } catch (error) {
-        const fallback = await cache.match(request, { ignoreSearch: true });
+        const fallback = ignoreSearchFallback ? await cache.match(request, { ignoreSearch: true }) : null;
         if (fallback) {
             return fallback;
         }
         return new Response('', { status: 504, statusText: 'Offline' });
     }
+}
+
+function handleCover(event, request) {
+    return staleWhileRevalidateImage(event, request, COVER_CACHE, MAX_COVER_ENTRIES, true);
+}
+
+// The ?file= query selects the page, so never fall back to another page's thumbnail.
+function handlePageThumb(event, request) {
+    return staleWhileRevalidateImage(event, request, THUMB_CACHE, MAX_THUMB_ENTRIES, false);
 }
 
 function isCacheablePage(url) {
@@ -394,17 +422,19 @@ async function networkFirstPage(request) {
         if (cached) {
             return cached;
         }
-
-        const offlinePage = await caches.match(OFFLINE_URL);
-        if (offlinePage) {
-            return offlinePage;
-        }
-
-        return new Response('Offline', {
-            status: 503,
-            headers: { 'Content-Type': 'text/plain' }
-        });
+        return offlineFallback();
     }
+}
+
+async function offlineFallback() {
+    const offlinePage = await caches.match(OFFLINE_URL);
+    if (offlinePage) {
+        return offlinePage;
+    }
+    return new Response('Offline', {
+        status: 503,
+        headers: { 'Content-Type': 'text/plain' }
+    });
 }
 
 self.addEventListener('fetch', function (event) {
@@ -415,6 +445,14 @@ self.addEventListener('fetch', function (event) {
 
     const url = new URL(request.url);
     if (url.origin !== self.location.origin || url.pathname === '/sw.js') {
+        return;
+    }
+
+    if (NEVER_CACHE_REGEXES.some(function (regex) { return regex.test(url.pathname); })) {
+        // Navigations still get the offline page when the network is down; nothing is stored.
+        if (request.mode === 'navigate') {
+            event.respondWith(fetch(request).catch(offlineFallback));
+        }
         return;
     }
 
@@ -435,6 +473,11 @@ self.addEventListener('fetch', function (event) {
 
     if (COVER_PATH_REGEX.test(url.pathname)) {
         event.respondWith(handleCover(event, request));
+        return;
+    }
+
+    if (PAGE_THUMB_PATH_REGEX.test(url.pathname)) {
+        event.respondWith(handlePageThumb(event, request));
         return;
     }
 

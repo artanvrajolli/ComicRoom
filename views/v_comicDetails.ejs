@@ -3,62 +3,104 @@
     var basePath = '/comic/' + comic.savedFolder + '/' + comic.id;
     var encodePath = function (p) { return String(p || '').split('/').map(encodeURIComponent).join('/'); };
     var coverSrc = comic.coverImage ? '/public/uploads/' + encodeURIComponent(comic.savedFolder) + '/' + encodePath(comic.coverImage) : '';
+    // Small cached thumbnail for the preview; ?v= changes when the cover page changes.
+    var coverThumbSrc = comic.coverImage ? '/comic/cover/' + comic.id + '?v=' + encodeURIComponent(comic.coverImage) : '';
     var pageCount = viewerType === 'image' ? comicPages.length : (comic.totalPages || 0);
     var flashText = (typeof msg != 'undefined' && msg) ? String(msg) : '';
     var flashIsSuccess = /success|added|moved|removed|saved/i.test(flashText) && !/unable|invalid|could not|must|only/i.test(flashText);
+    var thumbUrl = function (relativePath) { return '/comic/page-thumb/' + encodeURIComponent(comic.id) + '?file=' + encodeURIComponent(relativePath); };
 %>
 <style>
 :where(.cr-card) {
-    background: var(--cr-surface, #1c1c1f);
-    border: 1px solid var(--cr-border, #2e2e33);
+    background: var(--cr-surface, #1b1b1f);
+    border: 1px solid var(--cr-border, #34343b);
     border-radius: var(--cr-radius, 14px);
-    box-shadow: var(--cr-shadow, 0 8px 24px rgba(0, 0, 0, .35));
+    box-shadow: var(--cr-shadow, 0 10px 30px rgba(0, 0, 0, .45));
     padding: 1.5rem;
 }
 :where(.cr-page-title) { font-weight: 700; letter-spacing: -.01em; }
 /* Bootstrap display utilities use !important; keep the hidden attribute authoritative */
 .cd-page [hidden] { display: none !important; }
-:where(.cr-empty-state) { text-align: center; padding: 2rem 1rem; color: var(--cr-muted, #a3a3ad); }
+:where(.cr-empty-state) { text-align: center; padding: 2rem 1rem; color: var(--cr-muted, #a6a6b0); }
 
-.cd-page { text-align: left; color: var(--cr-text, #f2f2f3); font-family: var(--cr-font, inherit); }
-.cd-muted { color: var(--cr-muted, #a3a3ad); }
+.cd-page {
+    text-align: left;
+    color: var(--cr-text, #ededf0);
+    font-family: var(--cr-font, inherit);
+    /* body already reserves the tab bar; this only makes room for the save bar */
+    padding-bottom: var(--cd-savebar-h, 0px);
+}
+.cd-muted { color: var(--cr-muted, #a6a6b0); }
 .cd-page .fw-semibold { font-weight: 600; }
 .cd-page .min-w-0 { min-width: 0; }
 .cd-section-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 1rem; }
 
-/* Form controls tuned for the dark surface (Bootstrap 5.0 has no dark form theme) */
-.cd-page .form-label { color: var(--cr-text, #f2f2f3); font-weight: 600; font-size: .9rem; margin-bottom: .35rem; }
+/* Header */
+.cd-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: .5rem 1rem; margin-bottom: 1.25rem; }
+.cd-back { display: inline-flex; align-items: center; gap: .4rem; min-height: 44px; color: var(--cr-muted, #a6a6b0); text-decoration: none; font-size: .9rem; font-weight: 600; }
+.cd-back:hover { color: var(--cr-text, #ededf0); }
+.cd-subtitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Form controls tuned for the dark surface (Bootstrap 5.0 has no dark form theme). 16px stops iOS zooming on focus. */
+.cd-page .form-label { color: var(--cr-text, #ededf0); font-weight: 600; font-size: .9rem; margin-bottom: .35rem; }
 .cd-page .form-control {
-    background-color: var(--cr-surface-2, #242428);
+    background-color: var(--cr-surface-2, #26262b);
     border: 1px solid var(--cr-border, #3a3a40);
-    color: var(--cr-text, #f2f2f3);
+    color: var(--cr-text, #ededf0);
     border-radius: var(--cr-radius-sm, 8px);
+    font-size: 1rem;
+    min-height: 44px;
 }
 .cd-page .form-control::placeholder { color: var(--cr-muted, #8b8b95); opacity: 1; }
 .cd-page .form-control:focus {
-    background-color: var(--cr-surface-2, #242428);
-    color: var(--cr-text, #f2f2f3);
-    border-color: var(--cr-accent, #f0a530);
-    box-shadow: 0 0 0 .2rem color-mix(in srgb, var(--cr-accent, #f0a530) 30%, transparent);
+    background-color: var(--cr-surface-2, #26262b);
+    color: var(--cr-text, #ededf0);
+    border-color: var(--cr-accent, #f5a524);
+    box-shadow: 0 0 0 .2rem color-mix(in srgb, var(--cr-accent, #f5a524) 30%, transparent);
 }
 .cd-page .form-control:disabled { opacity: .6; }
-.cd-page .form-control::file-selector-button { background: var(--cr-surface, #1c1c1f); color: var(--cr-text, #f2f2f3); }
-.cd-page .form-text { color: var(--cr-muted, #a3a3ad); }
+.cd-page .form-control[type=file] { padding-top: .55rem; padding-bottom: .55rem; }
+.cd-page .form-control::file-selector-button { background: var(--cr-surface, #1b1b1f); color: var(--cr-text, #ededf0); }
+.cd-page .form-text { color: var(--cr-muted, #a6a6b0); }
 .cd-page textarea.form-control { min-height: 180px; resize: vertical; }
 .cd-page .is-ai-filled { animation: cd-flash 1.6s ease-out 1; }
 @keyframes cd-flash {
-    0% { box-shadow: 0 0 0 .25rem color-mix(in srgb, var(--cr-accent, #f0a530) 55%, transparent); }
+    0% { box-shadow: 0 0 0 .25rem color-mix(in srgb, var(--cr-accent, #f5a524) 55%, transparent); }
     100% { box-shadow: 0 0 0 0 transparent; }
 }
 
+.cd-page .btn { min-height: 44px; border-radius: var(--cr-radius-sm, 8px); display: inline-flex; align-items: center; justify-content: center; gap: .45rem; }
 .cd-page .btn-accent {
-    background: var(--cr-accent, #f0a530);
-    border-color: var(--cr-accent, #f0a530);
-    color: var(--cr-accent-contrast, #1a1205);
+    background: var(--cr-accent, #f5a524);
+    border-color: var(--cr-accent, #f5a524);
+    color: var(--cr-accent-contrast, #1a1204);
     font-weight: 600;
 }
-.cd-page .btn-accent:hover:not(:disabled) { filter: brightness(1.08); color: var(--cr-accent-contrast, #1a1205); }
-.cd-page .btn:focus-visible, .cd-page a:focus-visible, .cd-modal .btn:focus-visible { outline: 3px solid var(--cr-accent, #f0a530); outline-offset: 2px; box-shadow: none; }
+.cd-page .btn-accent:hover:not(:disabled) { filter: brightness(1.08); color: var(--cr-accent-contrast, #1a1204); }
+.cd-page .btn-quiet { background: var(--cr-surface-2, #26262b); border: 1px solid var(--cr-border, #34343b); color: var(--cr-text, #ededf0); font-weight: 600; }
+.cd-page .btn-quiet:hover { border-color: var(--cr-muted, #a6a6b0); color: var(--cr-text, #ededf0); }
+.cd-page .btn:focus-visible, .cd-page a:focus-visible, .cd-page button:focus-visible { outline: 3px solid var(--cr-accent, #f5a524); outline-offset: 2px; box-shadow: none; }
+
+/* Collapsible sections (phones/tablets only; always open on desktop) */
+.cd-section-head { display: flex; justify-content: space-between; align-items: center; gap: .5rem; margin-bottom: 1rem; }
+.cd-section-head .cd-section-title { margin: 0; }
+.cd-collapse-btn {
+    display: none;
+    width: 100%;
+    min-height: 44px;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    padding: 0;
+    background: none;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+}
+.cd-collapse-btn .cd-count { font-weight: 400; font-size: .85rem; color: var(--cr-muted, #a6a6b0); margin-left: .35rem; }
+.cd-collapse-btn .fa-chevron-down { transition: transform .2s ease; color: var(--cr-muted, #a6a6b0); }
+.cd-collapse-btn[aria-expanded="false"] .fa-chevron-down { transform: rotate(-90deg); }
 
 /* Cover preview */
 .cd-cover {
@@ -67,123 +109,238 @@
     max-width: 320px;
     margin: 0 auto;
     border-radius: var(--cr-radius-sm, 8px);
-    background: var(--cr-bg, #111113);
-    border: 1px solid var(--cr-border, #2e2e33);
+    background: var(--cr-bg, #111111);
+    border: 1px solid var(--cr-border, #34343b);
     overflow: hidden;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 .cd-cover img { width: 100%; height: 100%; object-fit: contain; }
-.cd-cover-empty { color: var(--cr-muted, #a3a3ad); font-size: 2.5rem; }
+.cd-cover-empty { color: var(--cr-muted, #a6a6b0); font-size: 2.5rem; }
 .cd-meta { display: grid; grid-template-columns: auto 1fr; gap: .35rem 1rem; font-size: .875rem; margin: 1rem 0 0; }
-.cd-meta dt { color: var(--cr-muted, #a3a3ad); font-weight: 400; }
+.cd-meta dt { color: var(--cr-muted, #a6a6b0); font-weight: 400; }
 .cd-meta dd { margin: 0; overflow-wrap: anywhere; }
-@media (max-width: 991.98px) {
-    /* Compact cover row on small screens so the form stays near the top */
-    .cd-cover-wrap { display: flex; gap: 1rem; align-items: flex-start; }
-    .cd-cover-wrap .cd-cover { width: 110px; flex-shrink: 0; margin: 0; }
-    .cd-cover-wrap .cd-meta { margin-top: 0; flex: 1; min-width: 0; }
-    .cd-cover-empty { font-size: 1.75rem; }
-}
 
-/* Page grid */
-.cd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 1rem; list-style: none; padding: 0; margin: 0; }
-@media (max-width: 420px) { .cd-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; } }
-.cd-tile {
-    display: flex;
-    flex-direction: column;
-    background: var(--cr-surface-2, #242428);
-    border: 1px solid var(--cr-border, #2e2e33);
-    border-radius: var(--cr-radius-sm, 8px);
+/* Page grid: uniform thumbnails, tap for actions */
+.cd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: .85rem; list-style: none; padding: 0; margin: 0; }
+.cd-tile { min-width: 0; scroll-margin: 6rem 0 calc(var(--cr-bottom-nav-h, 0px) + 6rem); }
+.cd-tile-btn {
+    position: relative;
+    display: block;
+    width: 100%;
+    aspect-ratio: 2 / 3;
+    padding: 0;
     overflow: hidden;
+    border: 1px solid var(--cr-border, #34343b);
+    border-radius: var(--cr-radius-sm, 8px);
+    background: var(--cr-bg, #111111);
+    color: inherit;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    transition: border-color .15s ease, transform .15s ease;
 }
-.cd-thumb { position: relative; aspect-ratio: 2 / 3; background: var(--cr-bg, #111113); }
-.cd-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
-.cd-thumb-link:focus-visible { outline: 3px solid var(--cr-accent, #f0a530); outline-offset: -3px; }
-.cd-page-num {
+.cd-tile-btn img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cd-tile-btn:hover { border-color: var(--cr-muted, #a6a6b0); }
+.cd-tile-btn:active { transform: scale(.97); }
+.cd-tile-btn:focus-visible { outline: 3px solid var(--cr-accent, #f5a524); outline-offset: 2px; }
+.cd-tile.is-recent .cd-tile-btn { border-color: var(--cr-accent, #f5a524); box-shadow: 0 0 0 3px color-mix(in srgb, var(--cr-accent, #f5a524) 45%, transparent); }
+.cd-page-num, .cd-cover-tag {
     position: absolute;
-    top: .4rem;
-    left: .4rem;
-    min-width: 2rem;
-    padding: .15rem .5rem;
+    padding: .1rem .45rem;
     border-radius: 999px;
-    background: rgba(0, 0, 0, .75);
+    background: rgba(0, 0, 0, .78);
     color: #fff;
     font-weight: 700;
-    font-size: .8rem;
-    text-align: center;
+    font-size: .75rem;
+    line-height: 1.4;
     font-variant-numeric: tabular-nums;
 }
-.cd-tile-body { padding: .6rem; display: flex; flex-direction: column; gap: .5rem; }
-.cd-file { font-size: .75rem; color: var(--cr-muted, #a3a3ad); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cd-tile-actions { display: flex; gap: .35rem; }
-.cd-tile-actions form { flex: 1; display: flex; }
-.cd-tile-actions .btn { flex: 1; padding: .25rem 0; }
-.cd-move { display: flex; gap: .35rem; }
-.cd-move .form-control { padding: .2rem .4rem; font-size: .85rem; min-width: 0; }
+.cd-page-num { top: .3rem; left: .3rem; min-width: 1.6rem; text-align: center; }
+.cd-cover-tag { bottom: .3rem; left: .3rem; background: var(--cr-accent, #f5a524); color: var(--cr-accent-contrast, #1a1204); font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; }
+.cd-file { font-size: .8rem; color: var(--cr-muted, #a6a6b0); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Action sheet (bottom sheet on phones, centred dialog on larger screens) */
+.cd-sheet {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--cr-text, #ededf0);
+    width: 100%;
+    max-width: 100%;
+    max-height: 88vh;
+    margin: auto auto 0;
+    overflow: visible;
+}
+.cd-sheet::backdrop { background: rgba(0, 0, 0, .62); }
+.cd-sheet[open] { animation: cd-sheet-in .22s ease-out; }
+@keyframes cd-sheet-in { from { transform: translateY(40px); opacity: .4; } to { transform: none; opacity: 1; } }
+.cd-sheet-inner {
+    background: var(--cr-surface, #1b1b1f);
+    border: 1px solid var(--cr-border, #34343b);
+    border-bottom: 0;
+    border-radius: 18px 18px 0 0;
+    padding: .35rem 1rem calc(1rem + env(safe-area-inset-bottom, 0px));
+    max-height: 88vh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    text-align: left;
+    box-shadow: 0 -10px 30px rgba(0, 0, 0, .5);
+}
+.cd-sheet.is-dragging .cd-sheet-inner { transition: none; }
+.cd-sheet-inner.is-settling { transition: transform .2s ease; }
+.cd-sheet-grip { width: 40px; height: 5px; border-radius: 3px; background: var(--cr-border, #4a4a52); margin: .35rem auto .5rem; }
+.cd-sheet-head { display: flex; align-items: center; gap: .85rem; padding-bottom: .75rem; border-bottom: 1px solid var(--cr-border, #34343b); margin-bottom: .35rem; }
+.cd-sheet-thumb { width: 52px; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 6px; background: var(--cr-bg, #111111); flex-shrink: 0; }
+.cd-sheet-title { font-size: 1.05rem; font-weight: 700; margin: 0; }
+.cd-sheet-close {
+    margin-left: auto; flex: 0 0 44px; width: 44px; height: 44px; border-radius: 50%;
+    border: 0; background: var(--cr-surface-2, #26262b); color: var(--cr-text, #ededf0); font-size: 1.1rem;
+}
+.cd-sheet-list { display: flex; flex-direction: column; }
+.cd-sheet-list form { display: contents; }
+.cd-sheet-item {
+    display: flex; align-items: center; gap: .9rem;
+    width: 100%; min-height: 52px; padding: .5rem .5rem;
+    background: none; border: 0; border-radius: var(--cr-radius-sm, 8px);
+    color: var(--cr-text, #ededf0); font: inherit; font-size: 1rem; text-align: left; text-decoration: none;
+}
+.cd-sheet-item:hover:not(:disabled), .cd-sheet-item:active:not(:disabled) { background: var(--cr-surface-2, #26262b); color: var(--cr-text, #ededf0); }
+.cd-sheet-item > i { width: 1.4rem; text-align: center; color: var(--cr-muted, #a6a6b0); }
+.cd-sheet-item:disabled { opacity: .45; }
+.cd-sheet-item .cd-hint { margin-left: auto; font-size: .8rem; color: var(--cr-muted, #a6a6b0); }
+.cd-sheet-item.is-danger, .cd-sheet-item.is-danger > i { color: var(--cr-danger, #f87171); }
+.cd-sheet-item:focus-visible { outline: 3px solid var(--cr-accent, #f5a524); outline-offset: -3px; }
+.cd-sheet-moveto { padding: .25rem .5rem .75rem 2.8rem; }
+.cd-sheet-moveto .d-flex { gap: .5rem; }
+.cd-sheet-moveto .form-control { max-width: 9rem; }
+.cd-sheet-confirm { padding: .75rem .25rem 0; }
+.cd-sheet-confirm-actions { display: flex; gap: .5rem; margin-top: 1rem; }
+.cd-sheet-confirm-actions .btn { flex: 1 1 0; min-height: 50px; }
+@media (min-width: 576px) {
+    .cd-sheet { width: 420px; margin: auto; }
+    .cd-sheet-inner { border-radius: var(--cr-radius, 14px); border-bottom: 1px solid var(--cr-border, #34343b); padding-bottom: 1rem; }
+    .cd-sheet-grip { display: none; }
+    .cd-sheet-head { padding-top: .65rem; }
+    @keyframes cd-sheet-in { from { transform: scale(.96); opacity: 0; } to { transform: none; opacity: 1; } }
+}
+
+/* Sticky "save" bar while the details form has unsaved changes (phones/tablets) */
+.cd-savebar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: calc(var(--cr-bottom-nav-h, 0px) + env(safe-area-inset-bottom, 0px));
+    z-index: 1020;
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    padding: .65rem max(1rem, env(safe-area-inset-right, 0px)) .65rem max(1rem, env(safe-area-inset-left, 0px));
+    background: color-mix(in srgb, var(--cr-surface, #1b1b1f) 96%, transparent);
+    border-top: 1px solid var(--cr-border, #34343b);
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, .45);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+}
+.cd-savebar-text { flex: 1; min-width: 0; font-size: .9rem; font-weight: 600; }
+.cd-savebar-text i { color: var(--cr-accent, #f5a524); font-size: .55rem; vertical-align: middle; margin-right: .35rem; }
+.cd-savebar .btn { min-height: 48px; padding-left: 1.25rem; padding-right: 1.25rem; }
 
 /* Toasts */
 .cd-toasts { position: fixed; right: 1rem; bottom: 1rem; z-index: 1080; display: flex; flex-direction: column; gap: .5rem; max-width: min(380px, calc(100vw - 2rem)); }
 .cd-toast {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: .6rem;
-    padding: .75rem .9rem;
+    padding: .35rem .35rem .35rem .9rem;
     border-radius: var(--cr-radius-sm, 8px);
-    background: var(--cr-surface, #1c1c1f);
-    color: var(--cr-text, #f2f2f3);
+    background: var(--cr-surface, #1b1b1f);
+    color: var(--cr-text, #ededf0);
     border: 1px solid var(--cr-border, #3a3a40);
-    border-left: 4px solid var(--cr-accent, #f0a530);
+    border-left: 4px solid var(--cr-accent, #f5a524);
     box-shadow: var(--cr-shadow, 0 8px 24px rgba(0, 0, 0, .45));
     text-align: left;
     animation: cd-toast-in .2s ease-out;
 }
-.cd-toast.is-success { border-left-color: var(--cr-success, #3fb950); }
-.cd-toast.is-success .cd-toast-icon { color: var(--cr-success, #3fb950); }
-.cd-toast.is-error { border-left-color: var(--cr-danger, #e5534b); }
-.cd-toast.is-error .cd-toast-icon { color: var(--cr-danger, #e5534b); }
-.cd-toast-icon { margin-top: .15rem; color: var(--cr-accent, #f0a530); }
-.cd-toast-close { background: none; border: 0; color: var(--cr-muted, #a3a3ad); padding: 0 .25rem; margin-left: auto; line-height: 1; }
-.cd-toast-close:hover { color: var(--cr-text, #f2f2f3); }
-.cd-toast-close:focus-visible { outline: 2px solid var(--cr-accent, #f0a530); }
+.cd-toast > div { padding: .4rem 0; }
+.cd-toast.is-success { border-left-color: var(--cr-success, #4ade80); }
+.cd-toast.is-success .cd-toast-icon { color: var(--cr-success, #4ade80); }
+.cd-toast.is-error { border-left-color: var(--cr-danger, #f87171); }
+.cd-toast.is-error .cd-toast-icon { color: var(--cr-danger, #f87171); }
+.cd-toast-icon { color: var(--cr-accent, #f5a524); }
+.cd-toast-close { background: none; border: 0; color: var(--cr-muted, #a6a6b0); width: 44px; height: 44px; flex: 0 0 44px; margin-left: auto; font-size: 1.3rem; line-height: 1; border-radius: 6px; }
+.cd-toast-close:hover { color: var(--cr-text, #ededf0); }
+.cd-toast-close:focus-visible { outline: 2px solid var(--cr-accent, #f5a524); }
 @keyframes cd-toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
-/* Modal */
-.cd-modal .modal-content { background: var(--cr-surface, #1c1c1f); color: var(--cr-text, #f2f2f3); border: 1px solid var(--cr-border, #3a3a40); border-radius: var(--cr-radius, 14px); text-align: left; }
-.cd-modal .modal-header, .cd-modal .modal-footer { border-color: var(--cr-border, #3a3a40); }
-.cd-modal .btn-close { filter: invert(1) grayscale(100%) brightness(200%); }
-.cd-modal-thumb { width: 72px; aspect-ratio: 2 / 3; object-fit: contain; background: var(--cr-bg, #111113); border-radius: 6px; flex-shrink: 0; }
+@media (max-width: 991.98px) {
+    .cd-page.container { padding-left: 12px; padding-right: 12px; }
+    .cd-page .cr-card { padding: 1rem; }
+    .cd-collapse-btn { display: flex; }
+    .cd-collapse-static { display: none; }
+    .cd-section-head { margin-bottom: 0; }
+    .cd-section.is-expanded .cd-section-head { margin-bottom: .75rem; }
+    .cd-section:not(.is-expanded) .cd-section-body { display: none; }
+    /* Compact cover row so the form stays near the top */
+    .cd-cover-wrap { display: flex; gap: 1rem; align-items: flex-start; }
+    .cd-cover-wrap .cd-cover { width: 84px; flex-shrink: 0; margin: 0; }
+    .cd-cover-wrap .cd-meta { margin-top: 0; flex: 1; min-width: 0; }
+    .cd-cover-empty { font-size: 1.5rem; }
+    .cd-cover-card .cd-section-title { display: none; }
+    .cd-page textarea.form-control { min-height: 150px; }
+    #aiFillButton { width: 100%; }
+    .cd-toasts { left: .75rem; right: .75rem; max-width: none; bottom: calc(var(--cr-bottom-nav-h, 0px) + env(safe-area-inset-bottom, 0px) + var(--cd-savebar-h, 0px) + .75rem); }
+}
+@media (max-width: 767.98px) {
+    .cd-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .5rem; }
+}
+@media (max-width: 479.98px) {
+    .cd-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .cd-head .btn { width: 100%; }
+    .cd-head > div { width: 100%; }
+}
+@media (min-width: 992px) {
+    .cd-savebar { display: none !important; }
+    .cd-page { --cd-savebar-h: 0px !important; }
+}
 
 @media (prefers-reduced-motion: reduce) {
-    .cd-toast, .cd-page .is-ai-filled { animation: none; }
+    .cd-toast, .cd-page .is-ai-filled, .cd-sheet[open] { animation: none; }
+    .cd-tile-btn, .cd-collapse-btn .fa-chevron-down, .cd-sheet-inner.is-settling { transition: none; }
 }
 </style>
 
-<main class="container content_c mt-4 mb-5 cd-page" id="comicEditor"
-      data-ai-url="<%= basePath %>/ai-metadata">
-    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+<div class="container content_c mt-3 mb-5 cd-page" id="comicEditor"
+      data-ai-url="<%= basePath %>/ai-metadata" data-comic-id="<%= comic.id %>">
+    <div class="cd-head">
         <div class="min-w-0">
-            <a href="/comic" class="small cd-muted text-decoration-none"><i class="fas fa-arrow-left" aria-hidden="true"></i> Gallery</a>
-            <h1 class="cr-page-title h3 mb-0 mt-1">Edit comic</h1>
-            <div class="cd-muted text-truncate"><%= comic.title || 'Untitled comic' %></div>
+            <a href="/comic" class="cd-back"><i class="fas fa-arrow-left" aria-hidden="true"></i> Gallery</a>
+            <h1 class="cr-page-title h3 mb-0">Edit comic</h1>
+            <div class="cd-muted cd-subtitle"><%= comic.title || 'Untitled comic' %></div>
         </div>
-        <a class="btn btn-outline-light" href="/comic/show/<%= comic.id %>"><i class="fas fa-book-open" aria-hidden="true"></i> Open comic</a>
+        <a class="btn btn-quiet" href="/comic/show/<%= comic.id %>"><i class="fas fa-book-open" aria-hidden="true"></i> Open comic</a>
     </div>
 
-    <div class="row g-4">
+    <div class="row g-3 g-lg-4">
         <!-- Details form -->
         <div class="col-12 col-lg-8 order-2 order-lg-1">
-            <section class="cr-card h-100" aria-labelledby="detailsHeading">
-                <h2 id="detailsHeading" class="cd-section-title">Details</h2>
+            <section class="cr-card h-100 cd-section is-expanded" id="detailsSection" data-section="details" aria-labelledby="detailsHeading">
+                <div class="cd-section-head">
+                    <h2 id="detailsHeading" class="cd-section-title">
+                        <button type="button" class="cd-collapse-btn" aria-expanded="true" aria-controls="detailsBody"><span>Details</span><i class="fas fa-chevron-down" aria-hidden="true"></i></button>
+                        <span class="cd-collapse-static">Details</span>
+                    </h2>
+                </div>
+                <div class="cd-section-body" id="detailsBody">
                 <form method="post" id="detailsForm" data-busy-text="Saving...">
                     <div class="mb-3">
                         <label class="form-label" for="titleText">Title <span class="cd-muted fw-normal">(required)</span></label>
-                        <input class="form-control" type="text" name="title" id="titleText" placeholder="e.g. The Amazing Adventures" value="<%= comic.title || '' %>" required autocomplete="off">
+                        <input class="form-control" type="text" name="title" id="titleText" placeholder="e.g. The Amazing Adventures" value="<%= comic.title || '' %>" required autocomplete="off" enterkeyhint="next">
                     </div>
                     <div class="mb-3">
                         <label class="form-label" for="authortext">Author</label>
-                        <input class="form-control" type="text" name="author" id="authortext" placeholder="Writer or artist" value="<%= comic.author || '' %>" autocomplete="off">
+                        <input class="form-control" type="text" name="author" id="authortext" placeholder="Writer or artist" value="<%= comic.author || '' %>" autocomplete="off" enterkeyhint="next">
                     </div>
                     <div class="mb-2">
                         <div class="d-flex justify-content-between align-items-end">
@@ -203,21 +360,22 @@
                     </div>
                     <p class="form-text mb-0 mt-1">AI reads the first pages and fills the fields above. Nothing is saved until you press Save.</p>
 
-                    <button class="btn btn-accent w-100 mt-4" type="submit" name="submit" value="Save Details">
+                    <button class="btn btn-accent w-100 mt-4" type="submit" name="submit" value="Save Details" id="saveDetailsButton">
                         <i class="fas fa-save" aria-hidden="true"></i> <span class="cd-btn-label">Save details</span>
                     </button>
                 </form>
+                </div>
             </section>
         </div>
 
         <!-- Cover preview -->
         <div class="col-12 col-lg-4 order-1 order-lg-2">
-            <aside class="cr-card h-100" aria-labelledby="coverHeading">
+            <aside class="cr-card h-100 cd-cover-card" aria-labelledby="coverHeading">
                 <h2 id="coverHeading" class="cd-section-title">Cover</h2>
                 <div class="cd-cover-wrap">
                 <div class="cd-cover">
                     <% if (coverSrc) { %>
-                        <img src="<%= coverSrc %>" alt="Cover of <%= comic.title || 'this comic' %>" decoding="async" onerror="this.replaceWith(Object.assign(document.createElement('i'),{className:'fas fa-image cd-cover-empty'}))">
+                        <img src="<%= coverThumbSrc %>" data-full-src="<%= coverSrc %>" alt="Cover of <%= comic.title || 'this comic' %>" decoding="async" onerror="if(this.dataset.fullSrc&&this.src.indexOf('/comic/cover/')!==-1){this.src=this.dataset.fullSrc;}else{this.replaceWith(Object.assign(document.createElement('i'),{className:'fas fa-image cd-cover-empty'}))}">
                     <% } else { %>
                         <i class="fas fa-image cd-cover-empty" aria-hidden="true"></i>
                         <span class="visually-hidden">No cover image</span>
@@ -230,26 +388,30 @@
                 </dl>
                 </div>
                 <% if (viewerType === 'image') { %>
-                <p class="form-text mb-0 mt-3">The first page is used as the cover. Move a page to position 1 to change it.</p>
+                <p class="form-text mb-0 mt-3">The first page is the cover. Select a page and choose <em>Set as cover</em> to change it.</p>
                 <% } %>
             </aside>
         </div>
     </div>
 
     <!-- Page management -->
-    <section class="cr-card mt-4" aria-labelledby="pagesHeading">
-        <div class="d-flex flex-wrap justify-content-between align-items-baseline gap-2">
-            <h2 id="pagesHeading" class="cd-section-title mb-0">Pages</h2>
-            <% if (viewerType === 'image') { %><span class="small cd-muted"><%= comicPages.length %> page<%= comicPages.length === 1 ? '' : 's' %></span><% } %>
+    <section class="cr-card mt-3 mt-lg-4 cd-section is-expanded" id="pagesSection" data-section="pages" aria-labelledby="pagesHeading">
+        <div class="cd-section-head">
+            <h2 id="pagesHeading" class="cd-section-title">
+                <button type="button" class="cd-collapse-btn" aria-expanded="true" aria-controls="pagesBody"><span>Pages<% if (viewerType === 'image') { %><span class="cd-count">(<%= comicPages.length %>)</span><% } %></span><i class="fas fa-chevron-down" aria-hidden="true"></i></button>
+                <span class="cd-collapse-static">Pages</span>
+            </h2>
+            <% if (viewerType === 'image') { %><span class="small cd-muted cd-collapse-static"><%= comicPages.length %> page<%= comicPages.length === 1 ? '' : 's' %></span><% } %>
         </div>
 
+        <div class="cd-section-body" id="pagesBody">
         <% if (viewerType !== 'image') { %>
             <div class="cr-empty-state">
                 <i class="fas fa-file-pdf fa-2x mb-2" aria-hidden="true"></i>
                 <p class="mb-0">Page management is available only for image-based comics. PDF uploads can still be edited for title, author and description.</p>
             </div>
         <% } else { %>
-            <form method="post" action="<%= basePath %>/pages/add" enctype="multipart/form-data" class="row g-3 align-items-end mt-1 mb-4" id="addPagesForm" data-busy-text="Uploading...">
+            <form method="post" action="<%= basePath %>/pages/add" enctype="multipart/form-data" class="row g-2 g-md-3 align-items-end mb-4" id="addPagesForm" data-busy-text="Uploading...">
                 <div class="col-12 col-md-7">
                     <label class="form-label" for="pageFilesInput">Add new pages</label>
                     <input class="form-control" type="file" id="pageFilesInput" name="pageFiles" accept=".jpg,.jpeg,.png,.webp,.gif,.svg,.avif,.apng" multiple required aria-describedby="pageFilesHelp">
@@ -257,7 +419,7 @@
                 </div>
                 <div class="col-6 col-md-3">
                     <label class="form-label" for="insertAfterInput">Insert after page</label>
-                    <input class="form-control" type="number" id="insertAfterInput" name="insertAfter" min="0" max="<%= comicPages.length %>" value="<%= comicPages.length %>" aria-describedby="insertAfterHelp">
+                    <input class="form-control" type="number" id="insertAfterInput" name="insertAfter" min="0" max="<%= comicPages.length %>" value="<%= comicPages.length %>" inputmode="numeric" aria-describedby="insertAfterHelp">
                     <div id="insertAfterHelp" class="form-text">0 = at the start</div>
                 </div>
                 <div class="col-6 col-md-2 d-grid">
@@ -266,40 +428,22 @@
                 </div>
             </form>
 
+            <% if (comicPages.length) { %>
+            <p class="form-text mt-0 mb-2">Select a page to view, move or remove it.</p>
+            <% } %>
             <ol class="cd-grid" aria-label="Comic pages">
                 <% comicPages.forEach((page) => { var pageSrc = '/public/uploads/' + encodeURIComponent(comic.savedFolder) + '/' + encodePath(page.relativePath); %>
-                <li class="cd-tile">
-                    <div class="cd-thumb">
-                        <a class="cd-thumb-link d-block w-100 h-100" href="<%= pageSrc %>" target="_blank" rel="noopener" aria-label="View page <%= page.number %> full size (opens in a new tab)">
-                            <img src="<%= pageSrc %>" loading="lazy" decoding="async" fetchpriority="low" alt="Page <%= page.number %>" width="200" height="300">
-                        </a>
+                <li class="cd-tile" id="page-<%= page.number %>">
+                    <button type="button" class="cd-tile-btn" aria-haspopup="dialog"
+                            data-page="<%= page.number %>"
+                            data-full="<%= pageSrc %>"
+                            data-file="<%= page.fileName || page.relativePath %>"
+                            aria-label="Page <%= page.number %><%= page.number === 1 ? ' (cover)' : '' %>, <%= page.fileName || page.relativePath %>. Show page actions">
+                        <img src="<%= thumbUrl(page.relativePath) %>" data-full="<%= pageSrc %>" loading="lazy" decoding="async" fetchpriority="low" alt="" width="160" height="240"
+                             onerror="this.onerror=null;this.src=this.getAttribute('data-full')">
                         <span class="cd-page-num" aria-hidden="true"><%= page.number %></span>
-                    </div>
-                    <div class="cd-tile-body">
-                        <div class="cd-file" title="<%= page.relativePath %>"><span class="visually-hidden">Page <%= page.number %>, file </span><%= page.fileName || page.relativePath %></div>
-                        <div class="cd-tile-actions">
-                            <form method="post" action="<%= basePath %>/pages/move" data-busy-text="">
-                                <input type="hidden" name="pageNumber" value="<%= page.number %>">
-                                <input type="hidden" name="targetPageNumber" value="<%= page.number - 1 %>">
-                                <button class="btn btn-sm btn-outline-light" type="submit" title="Move earlier" aria-label="Move page <%= page.number %> earlier" <%= page.number <= 1 ? 'disabled' : '' %>><i class="fas fa-chevron-left" aria-hidden="true"></i></button>
-                            </form>
-                            <form method="post" action="<%= basePath %>/pages/move" data-busy-text="">
-                                <input type="hidden" name="pageNumber" value="<%= page.number %>">
-                                <input type="hidden" name="targetPageNumber" value="<%= page.number + 1 %>">
-                                <button class="btn btn-sm btn-outline-light" type="submit" title="Move later" aria-label="Move page <%= page.number %> later" <%= page.number >= comicPages.length ? 'disabled' : '' %>><i class="fas fa-chevron-right" aria-hidden="true"></i></button>
-                            </form>
-                            <form method="post" action="<%= basePath %>/pages/delete" class="js-delete-page" data-page-number="<%= page.number %>" data-page-src="<%= pageSrc %>" data-busy-text="">
-                                <input type="hidden" name="pageNumber" value="<%= page.number %>">
-                                <button class="btn btn-sm btn-outline-danger" type="submit" title="<%= comicPages.length <= 1 ? 'A comic needs at least one page' : 'Remove page' %>" aria-label="Remove page <%= page.number %>" <%= comicPages.length <= 1 ? 'disabled' : '' %>><i class="fas fa-trash-alt" aria-hidden="true"></i></button>
-                            </form>
-                        </div>
-                        <form method="post" action="<%= basePath %>/pages/move" class="cd-move" data-busy-text="">
-                            <input type="hidden" name="pageNumber" value="<%= page.number %>">
-                            <label class="visually-hidden" for="movePage<%= page.number %>">Move page <%= page.number %> to position</label>
-                            <input class="form-control form-control-sm" id="movePage<%= page.number %>" type="number" name="targetPageNumber" min="1" max="<%= comicPages.length %>" value="<%= page.number %>" inputmode="numeric">
-                            <button class="btn btn-sm btn-outline-light" type="submit">Move</button>
-                        </form>
-                    </div>
+                        <% if (page.number === 1) { %><span class="cd-cover-tag" aria-hidden="true">Cover</span><% } %>
+                    </button>
                 </li>
                 <% }) %>
             </ol>
@@ -307,26 +451,66 @@
                 <div class="cr-empty-state"><p class="mb-0">This comic has no pages yet. Add images above.</p></div>
             <% } %>
         <% } %>
+        </div>
     </section>
-</main>
 
-<!-- Delete confirmation -->
-<div class="modal fade cd-modal" id="deletePageModal" tabindex="-1" aria-labelledby="deletePageTitle" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 class="modal-title h5" id="deletePageTitle">Remove page?</h2>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+    <% if (viewerType === 'image') { %>
+    <!-- Page actions: one sheet reused for every tile. Forms post to the same endpoints as before. -->
+    <dialog class="cd-sheet" id="pageSheet" aria-labelledby="sheetTitle">
+        <div class="cd-sheet-inner" id="sheetInner">
+            <div class="cd-sheet-grip" aria-hidden="true"></div>
+            <div class="cd-sheet-head">
+                <img id="sheetThumb" class="cd-sheet-thumb" alt="" decoding="async">
+                <div class="min-w-0">
+                    <h2 class="cd-sheet-title" id="sheetTitle">Page <span id="sheetPageNum"></span> <span class="cd-muted fw-normal">of <%= comicPages.length %></span></h2>
+                    <div class="cd-file" id="sheetFile"></div>
+                </div>
+                <button type="button" class="cd-sheet-close" id="sheetClose" aria-label="Close page actions"><i class="fas fa-times" aria-hidden="true"></i></button>
             </div>
-            <div class="modal-body d-flex gap-3 align-items-center">
-                <img id="deletePageThumb" class="cd-modal-thumb" alt="" decoding="async">
-                <p class="mb-0">Page <strong id="deletePageNumber"></strong> will be deleted from this comic. The remaining pages are renumbered. This cannot be undone.</p>
+
+            <div class="cd-sheet-list" id="sheetActions">
+                <a class="cd-sheet-item" id="sheetView" href="#" target="_blank" rel="noopener">
+                    <i class="fas fa-expand" aria-hidden="true"></i> View full size <span class="visually-hidden">(opens in a new tab)</span>
+                </a>
+                <form method="post" action="<%= basePath %>/pages/move" id="sheetMoveForm" data-busy-text="">
+                    <input type="hidden" name="pageNumber" id="sheetMovePage" value="">
+                    <input type="hidden" name="targetPageNumber" id="sheetMoveTarget" value="">
+                    <button type="submit" class="cd-sheet-item" id="sheetEarlier" data-move="earlier"><i class="fas fa-arrow-left" aria-hidden="true"></i> Move earlier</button>
+                    <button type="submit" class="cd-sheet-item" id="sheetLater" data-move="later"><i class="fas fa-arrow-right" aria-hidden="true"></i> Move later</button>
+                    <button type="submit" class="cd-sheet-item" id="sheetCover" data-move="first"><i class="fas fa-image" aria-hidden="true"></i> Set as cover <span class="cd-hint" id="sheetCoverHint"></span></button>
+                </form>
+                <button type="button" class="cd-sheet-item" id="sheetMoveToToggle" aria-expanded="false" aria-controls="sheetMoveToForm"><i class="fas fa-sort-numeric-down" aria-hidden="true"></i> Move to position…</button>
+                <form method="post" action="<%= basePath %>/pages/move" id="sheetMoveToForm" class="cd-sheet-moveto" data-busy-text="" hidden>
+                    <input type="hidden" name="pageNumber" id="sheetMoveToPage" value="">
+                    <label class="form-label" for="sheetMoveToInput">New position (1–<%= comicPages.length %>)</label>
+                    <div class="d-flex">
+                        <input class="form-control" type="number" id="sheetMoveToInput" name="targetPageNumber" min="1" max="<%= comicPages.length %>" inputmode="numeric" enterkeyhint="go" required>
+                        <button class="btn btn-accent" type="submit">Move</button>
+                    </div>
+                </form>
+                <button type="button" class="cd-sheet-item is-danger" id="sheetDelete"><i class="fas fa-trash-alt" aria-hidden="true"></i> Delete page <span class="cd-hint" id="sheetDeleteHint"></span></button>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-danger" id="confirmDeleteButton"><i class="fas fa-trash-alt" aria-hidden="true"></i> Remove page</button>
+
+            <div class="cd-sheet-confirm" id="sheetConfirm" hidden>
+                <p class="mb-0" id="sheetConfirmText">Page <strong id="deletePageNumber"></strong> will be deleted from this comic. The remaining pages are renumbered. This cannot be undone.</p>
+                <form method="post" action="<%= basePath %>/pages/delete" id="sheetDeleteForm" data-busy-text="Removing...">
+                    <input type="hidden" name="pageNumber" id="sheetDeletePage" value="">
+                    <div class="cd-sheet-confirm-actions">
+                        <button type="button" class="btn btn-quiet" id="sheetDeleteCancel">Cancel</button>
+                        <button type="submit" class="btn btn-danger" id="confirmDeleteButton"><i class="fas fa-trash-alt" aria-hidden="true"></i> Remove page</button>
+                    </div>
+                </form>
             </div>
         </div>
+    </dialog>
+    <% } %>
+
+    <!-- Shown on phones/tablets while the details form has unsaved changes -->
+    <div class="cd-savebar" id="saveBar" hidden>
+        <span class="cd-savebar-text"><i class="fas fa-circle" aria-hidden="true"></i>Unsaved changes</span>
+        <button type="submit" form="detailsForm" name="submit" value="Save Details" class="btn btn-accent" id="saveBarButton">
+            <i class="fas fa-save" aria-hidden="true"></i> <span class="cd-btn-label">Save details</span>
+        </button>
     </div>
 </div>
 
@@ -346,6 +530,11 @@
     var editor = document.getElementById('comicEditor');
     var toastRegion = document.getElementById('toastRegion');
     var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var comicId = editor.getAttribute('data-comic-id');
+    var compactQuery = window.matchMedia ? window.matchMedia('(max-width: 991.98px)') : null;
+    function isCompact() { return !!(compactQuery && compactQuery.matches); }
+    function store(kind) { try { return window[kind]; } catch (e) { return null; } }
+    var session = store('sessionStorage');
 
     // ---------- toasts ----------
     function wireToast(toast) {
@@ -379,6 +568,29 @@
 
     Array.prototype.forEach.call(toastRegion.querySelectorAll('.cd-toast'), wireToast);
 
+    // ---------- collapsible sections (phones/tablets) ----------
+    function setExpanded(section, expanded, persist) {
+        section.classList.toggle('is-expanded', expanded);
+        var btn = section.querySelector('.cd-collapse-btn');
+        if (btn) btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        if (persist && session) {
+            try { session.setItem('cd-collapsed-' + section.getAttribute('data-section'), expanded ? '0' : '1'); } catch (e) {}
+        }
+    }
+    Array.prototype.forEach.call(editor.querySelectorAll('.cd-section'), function (section) {
+        var btn = section.querySelector('.cd-collapse-btn');
+        var saved = null;
+        try { saved = session && session.getItem('cd-collapsed-' + section.getAttribute('data-section')); } catch (e) {}
+        if (saved === '1') setExpanded(section, false, false);
+        if (btn) btn.addEventListener('click', function () {
+            setExpanded(section, !section.classList.contains('is-expanded'), true);
+        });
+    });
+    function expandSection(id) {
+        var section = document.getElementById(id);
+        if (section && !section.classList.contains('is-expanded')) setExpanded(section, true, true);
+    }
+
     // ---------- busy state for form submissions ----------
     var SPINNER = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
 
@@ -401,7 +613,7 @@
 
     function lockForms() {
         // Prevent a second request while one is on its way
-        Array.prototype.forEach.call(editor.querySelectorAll('form button[type="submit"]'), function (b) {
+        Array.prototype.forEach.call(editor.querySelectorAll('form button[type="submit"], #saveBarButton'), function (b) {
             if (b.dataset.busy !== '1' && !b.disabled) {
                 b.disabled = true;
                 b.dataset.locked = '1';
@@ -421,20 +633,33 @@
         }, 0);
     }
 
+    // Remember where to scroll after the redirect back to this page
+    function rememberReturn(page) {
+        if (!session) return;
+        try { session.setItem('cd-return', JSON.stringify({ comic: comicId, page: page, t: Date.now() })); } catch (e) {}
+    }
+
     Array.prototype.forEach.call(editor.querySelectorAll('form'), function (form) {
         form.addEventListener('submit', function (event) {
             if (submitting) {
                 event.preventDefault();
                 return;
             }
-            if (form.classList.contains('js-delete-page')) {
-                event.preventDefault();
-                askDelete(form);
-                return;
-            }
             if (form.id === 'addPagesForm' && !validatePageFiles()) {
                 event.preventDefault();
                 return;
+            }
+            if (form.id === 'sheetMoveToForm' && !validateMoveTo()) {
+                event.preventDefault();
+                return;
+            }
+            if (form.id !== 'detailsForm') {
+                // Page changes reload the page; do not silently drop edited details
+                if (isDirty && !window.confirm('You have unsaved changes to the title, author or description. Continue without saving them?')) {
+                    event.preventDefault();
+                    return;
+                }
+                rememberReturn(returnTargetFor(form));
             }
             markSubmitting(form, event.submitter);
         });
@@ -471,6 +696,8 @@
         return true;
     }
     if (pageFilesInput) {
+        // Touch devices: open the photo/image picker instead of a file list filtered by extension
+        if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) pageFilesInput.setAttribute('accept', 'image/*');
         pageFilesInput.addEventListener('change', function () {
             var help = document.getElementById('pageFilesHelp');
             var count = pageFilesInput.files ? pageFilesInput.files.length : 0;
@@ -478,45 +705,179 @@
         });
     }
 
-    // ---------- delete confirmation ----------
-    var modalEl = document.getElementById('deletePageModal');
-    var confirmButton = document.getElementById('confirmDeleteButton');
-    var pendingDeleteForm = null;
-    var modal = (window.bootstrap && bootstrap.Modal) ? new bootstrap.Modal(modalEl) : null;
-
-    function askDelete(form) {
-        var number = form.getAttribute('data-page-number');
-        if (!modal) {
-            if (window.confirm('Remove page ' + number + '? This cannot be undone.')) submitDelete(form);
-            return;
+    function validateMoveTo() {
+        var value = parseInt(document.getElementById('sheetMoveToInput').value, 10);
+        if (!(value >= 1 && value <= totalPages)) {
+            showToast('Enter a position between 1 and ' + totalPages + '.', 'error');
+            document.getElementById('sheetMoveToInput').focus();
+            return false;
         }
-        pendingDeleteForm = form;
-        document.getElementById('deletePageNumber').textContent = number;
-        document.getElementById('deletePageThumb').src = form.getAttribute('data-page-src') || '';
-        modal.show();
+        if (value === currentPage) {
+            closeSheet();
+            return false;
+        }
+        return true;
     }
 
-    function submitDelete(form) {
-        markSubmitting(form, form.querySelector('button[type="submit"]'));
-        form.submit(); // submit() skips the submit event, so no second confirmation
+    // ---------- page action sheet ----------
+    var sheet = document.getElementById('pageSheet');
+    var sheetInner = document.getElementById('sheetInner');
+    var totalPages = editor.querySelectorAll('.cd-tile-btn').length;
+    var currentTile = null;
+    var currentPage = 0;
+
+    function returnTargetFor(form) {
+        if (form.id === 'addPagesForm') {
+            var after = parseInt(document.getElementById('insertAfterInput').value, 10);
+            return (isFinite(after) ? after : totalPages) + 1;
+        }
+        if (form.id === 'sheetDeleteForm') return Math.max(1, Math.min(currentPage, totalPages - 1));
+        var target = form.querySelector('[name="targetPageNumber"]');
+        return target ? parseInt(target.value, 10) || currentPage : currentPage;
     }
 
-    if (modalEl) {
-        modalEl.addEventListener('shown.bs.modal', function () { confirmButton.focus(); });
-        modalEl.addEventListener('hidden.bs.modal', function () {
-            if (pendingDeleteForm && !submitting) {
-                var trigger = pendingDeleteForm.querySelector('button[type="submit"]');
-                if (trigger) trigger.focus();
+    function el(id) { return document.getElementById(id); }
+
+    function showSheetView(view) {
+        el('sheetActions').hidden = view !== 'actions';
+        el('sheetConfirm').hidden = view !== 'confirm';
+    }
+
+    function openSheet(tile) {
+        if (!sheet) return;
+        currentTile = tile;
+        currentPage = parseInt(tile.getAttribute('data-page'), 10);
+        var img = tile.querySelector('img');
+        el('sheetPageNum').textContent = currentPage;
+        el('sheetFile').textContent = tile.getAttribute('data-file') || '';
+        el('sheetThumb').src = img ? img.currentSrc || img.src : '';
+        el('sheetView').href = tile.getAttribute('data-full');
+        el('sheetMovePage').value = currentPage;
+        el('sheetMoveToPage').value = currentPage;
+        el('sheetDeletePage').value = currentPage;
+        el('deletePageNumber').textContent = currentPage;
+        el('sheetMoveToInput').value = currentPage;
+        el('sheetEarlier').disabled = currentPage <= 1;
+        el('sheetLater').disabled = currentPage >= totalPages;
+        el('sheetCover').disabled = currentPage <= 1;
+        el('sheetCoverHint').textContent = currentPage <= 1 ? 'Already the cover' : '';
+        el('sheetMoveToToggle').disabled = totalPages <= 1;
+        el('sheetDelete').disabled = totalPages <= 1;
+        el('sheetDeleteHint').textContent = totalPages <= 1 ? 'Needs one page' : '';
+        el('sheetMoveToForm').hidden = true;
+        el('sheetMoveToToggle').setAttribute('aria-expanded', 'false');
+        showSheetView('actions');
+        sheetInner.style.transform = '';
+        sheetInner.scrollTop = 0;
+        if (typeof sheet.showModal === 'function') sheet.showModal();
+        else sheet.setAttribute('open', '');
+        document.documentElement.style.overflow = 'hidden';
+        el('sheetView').focus();
+    }
+
+    function closeSheet() {
+        if (!sheet || submitting) return;
+        if (typeof sheet.close === 'function') sheet.close();
+        else { sheet.removeAttribute('open'); onSheetClosed(); }
+    }
+
+    function onSheetClosed() {
+        document.documentElement.style.overflow = '';
+        sheetInner.style.transform = '';
+        if (currentTile && !submitting) currentTile.focus();
+    }
+
+    if (sheet) {
+        editor.querySelector('.cd-grid').addEventListener('click', function (event) {
+            var tile = event.target.closest ? event.target.closest('.cd-tile-btn') : null;
+            if (tile) openSheet(tile);
+        });
+        sheet.addEventListener('close', onSheetClosed);
+        sheet.addEventListener('cancel', function (event) {
+            // Esc: step back from the delete confirmation first; never close mid-submit
+            if (submitting) { event.preventDefault(); return; }
+            if (!el('sheetConfirm').hidden) { event.preventDefault(); showSheetView('actions'); el('sheetDelete').focus(); }
+        });
+        // Backdrop tap: the click lands on the <dialog> itself, outside the inner panel
+        sheet.addEventListener('click', function (event) { if (event.target === sheet) closeSheet(); });
+        el('sheetClose').addEventListener('click', closeSheet);
+
+        Array.prototype.forEach.call(sheet.querySelectorAll('[data-move]'), function (button) {
+            button.addEventListener('click', function () {
+                var kind = button.getAttribute('data-move');
+                var target = kind === 'earlier' ? currentPage - 1 : kind === 'later' ? currentPage + 1 : 1;
+                el('sheetMoveTarget').value = String(target);
+            });
+        });
+
+        el('sheetMoveToToggle').addEventListener('click', function () {
+            var form = el('sheetMoveToForm');
+            form.hidden = !form.hidden;
+            this.setAttribute('aria-expanded', form.hidden ? 'false' : 'true');
+            if (!form.hidden) {
+                var input = el('sheetMoveToInput');
+                input.focus();
+                input.select();
             }
-            pendingDeleteForm = null;
+        });
+
+        el('sheetDelete').addEventListener('click', function () {
+            showSheetView('confirm');
+            el('confirmDeleteButton').focus();
+        });
+        el('sheetDeleteCancel').addEventListener('click', function () {
+            showSheetView('actions');
+            el('sheetDelete').focus();
+        });
+
+        // Swipe down to close (only when the sheet is scrolled to the top)
+        var dragStartY = null, dragDy = 0, dragStartT = 0;
+        sheetInner.addEventListener('touchstart', function (event) {
+            if (submitting || event.touches.length !== 1 || sheetInner.scrollTop > 0) { dragStartY = null; return; }
+            if (event.target.closest && event.target.closest('input')) { dragStartY = null; return; }
+            dragStartY = event.touches[0].clientY;
+            dragStartT = Date.now();
+            dragDy = 0;
+            sheetInner.classList.remove('is-settling');
+        }, { passive: true });
+        sheetInner.addEventListener('touchmove', function (event) {
+            if (dragStartY == null) return;
+            dragDy = Math.max(0, event.touches[0].clientY - dragStartY);
+            if (dragDy > 0) sheetInner.style.transform = 'translateY(' + dragDy + 'px)';
+        }, { passive: true });
+        sheetInner.addEventListener('touchend', function () {
+            if (dragStartY == null) return;
+            var fast = dragDy > 40 && (Date.now() - dragStartT) < 250;
+            dragStartY = null;
+            if (dragDy > 110 || fast) {
+                closeSheet();
+            } else {
+                sheetInner.classList.add('is-settling');
+                sheetInner.style.transform = '';
+            }
         });
     }
-    confirmButton.addEventListener('click', function () {
-        if (!pendingDeleteForm) return;
-        var form = pendingDeleteForm;
-        setButtonBusy(confirmButton, 'Removing...');
-        submitDelete(form);
-    });
+
+    // After a page change the server redirects here; bring the affected page back into view
+    (function restoreReturn() {
+        if (!session) return;
+        var data = null;
+        try { data = JSON.parse(session.getItem('cd-return') || 'null'); session.removeItem('cd-return'); } catch (e) { data = null; }
+        if (!data || String(data.comic) !== String(comicId) || Date.now() - data.t > 120000) return;
+        expandSection('pagesSection');
+        var tile = document.getElementById('page-' + Math.max(1, Math.min(data.page, totalPages)));
+        var target = tile || document.getElementById('pagesSection');
+        if (!target) return;
+        if (tile) {
+            tile.classList.add('is-recent');
+            setTimeout(function () { tile.classList.remove('is-recent'); }, 2600);
+        }
+        requestAnimationFrame(function () {
+            target.scrollIntoView({ block: tile ? 'center' : 'start', behavior: 'auto' });
+            var btn = tile && tile.querySelector('.cd-tile-btn');
+            if (btn) btn.focus({ preventScroll: true });
+        });
+    })();
 
     // ---------- description counter ----------
     var descriptionInput = document.getElementById('descriptionText');
@@ -528,12 +889,29 @@
     if (descriptionInput) descriptionInput.addEventListener('input', updateCount);
     updateCount();
 
-    // ---------- unsaved changes warning for the details form ----------
+    // ---------- unsaved changes: warning + sticky save bar on phones ----------
     var detailsForm = document.getElementById('detailsForm');
+    var saveBar = document.getElementById('saveBar');
     var isDirty = false;
-    if (detailsForm) {
-        detailsForm.addEventListener('input', function () { isDirty = true; });
+    function updateSaveBar() {
+        var show = isDirty && !submitting;
+        if (saveBar.hidden === !show) return;
+        saveBar.hidden = !show;
+        document.documentElement.style.setProperty('--cd-savebar-h', show && isCompact() ? saveBar.offsetHeight + 'px' : '0px');
     }
+    if (detailsForm) {
+        detailsForm.addEventListener('input', function () {
+            // Dirty only while something differs from what was loaded
+            isDirty = Array.prototype.some.call(detailsForm.querySelectorAll('input[type="text"], textarea'), function (f) {
+                return f.value !== f.defaultValue;
+            });
+            updateSaveBar();
+        });
+    }
+    document.getElementById('saveBarButton').addEventListener('click', function () {
+        // Let browser validation reach the fields even if the section is collapsed
+        expandSection('detailsSection');
+    });
     window.addEventListener('beforeunload', function (event) {
         if (!isDirty || submitting) return undefined;
         event.preventDefault();
@@ -599,6 +977,7 @@
                 }
                 if (filledFields.length) {
                     isDirty = true;
+                    updateSaveBar();
                     var note = 'Filled the ' + listWords(filledFields) + '.';
                     if (skippedFields.length) {
                         note += ' No ' + listWords(skippedFields) + ' visible on the first pages, so ' + (skippedFields.length > 1 ? 'they were' : 'it was') + ' left unchanged.';

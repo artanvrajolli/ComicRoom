@@ -34,6 +34,8 @@
     border: 1px solid var(--cr-border, #3a3a40);
     color: var(--cr-text, #f2f2f3);
     border-radius: var(--cr-radius-sm, 8px);
+    font-size: 1rem; /* 16px: no zoom-on-focus on iOS */
+    min-height: 44px;
 }
 .ad-page .form-select { background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23c8c8d0' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e"); }
 .ad-page .form-select option { background: var(--cr-surface-2, #242428); color: var(--cr-text, #f2f2f3); }
@@ -46,7 +48,40 @@
 }
 .ad-page .form-control:disabled { opacity: .55; }
 .ad-page .form-text { color: var(--cr-muted, #a3a3ad); }
-.ad-page .input-group .btn { border-color: var(--cr-border, #3a3a40); }
+.ad-page .input-group .btn { border-color: var(--cr-border, #3a3a40); min-width: 48px; }
+.ad-page .btn { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: .45rem; }
+
+/* "Remove saved key": the whole row is the tap target, with a large switch */
+.ad-switch-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    min-height: 56px;
+    margin: 0;
+    padding: .65rem .9rem;
+    border: 1px solid var(--cr-border, #3a3a40);
+    border-radius: var(--cr-radius-sm, 8px);
+    background: var(--cr-surface-2, #242428);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.ad-switch-row:hover { border-color: var(--cr-muted, #a3a3ad); }
+.ad-switch-row:has(input:checked) { border-color: var(--cr-danger, #f87171); }
+.ad-switch-text { flex: 1; min-width: 0; }
+.ad-switch-text strong { display: block; font-weight: 600; }
+.ad-switch-text .form-text { margin: .15rem 0 0; }
+.ad-page .ad-switch.form-check-input {
+    flex: 0 0 auto;
+    width: 3rem;
+    height: 1.75rem;
+    margin: 0;
+    float: none;
+    cursor: pointer;
+    background-color: var(--cr-bg, #111111);
+    border-color: var(--cr-border, #5a5a62);
+}
+/* Bootstrap's unchecked knob is near-black; make it visible on the dark surface */
+.ad-page .ad-switch:not(:checked) { background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%23a6a6b0'/%3e%3c/svg%3e"); }
 .ad-page .form-check-input:checked { background-color: var(--cr-danger, #e5534b); border-color: var(--cr-danger, #e5534b); }
 .ad-page .form-check-input:focus-visible { outline: 3px solid var(--cr-accent, #f0a530); outline-offset: 2px; }
 
@@ -78,9 +113,25 @@
 .ad-defaults th, .ad-defaults td { padding: .4rem .5rem; border-bottom: 1px solid var(--cr-border, #2e2e33); vertical-align: top; }
 .ad-defaults th { color: var(--cr-muted, #a3a3ad); font-weight: 600; }
 .ad-defaults code { color: var(--cr-text, #f2f2f3); word-break: break-all; }
+
+@media (max-width: 575.98px) {
+    .ad-page .cr-card { padding: 1rem; }
+    .ad-status { grid-template-columns: 1fr 1fr; gap: .5rem; }
+    .ad-status > div { padding: .6rem .7rem; }
+    #testAiButton, #saveSettingsButton { width: 100%; min-height: 50px; font-size: 1.05rem; }
+    #testAiHelp { width: 100%; }
+    /* Reference table becomes one card per provider */
+    .ad-defaults thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    .ad-defaults, .ad-defaults tbody, .ad-defaults tr, .ad-defaults th, .ad-defaults td { display: block; width: 100%; }
+    .ad-defaults tr { padding: .75rem .85rem; margin-bottom: .6rem; border: 1px solid var(--cr-border, #2e2e33); border-radius: var(--cr-radius-sm, 8px); background: var(--cr-surface-2, #242428); }
+    .ad-defaults th, .ad-defaults td { border: 0; padding: .15rem 0; }
+    .ad-defaults tbody th { color: var(--cr-text, #f2f2f3); font-size: 1rem; margin-bottom: .25rem; }
+    .ad-defaults td::before { content: attr(data-label); display: block; font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--cr-muted, #a3a3ad); margin-top: .35rem; }
+    .ad-defaults .table-responsive, .ad-defaults-wrap { overflow: visible; }
+}
 </style>
 
-<main class="container content_c mt-4 mb-5 ad-page">
+<div class="container content_c mt-4 mb-5 ad-page">
     <h1 class="cr-page-title h3 mb-1">Admin</h1>
     <p class="ad-muted mb-4">Configure the AI provider used to fill in comic titles, authors and descriptions from the first pages.</p>
 
@@ -108,7 +159,7 @@
         </dl>
 
         <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
-            <button class="btn btn-outline-light btn-sm" id="testAiButton" type="button" aria-describedby="testAiHelp">
+            <button class="btn btn-outline-light" id="testAiButton" type="button" aria-describedby="testAiHelp">
                 <i class="fas fa-plug" aria-hidden="true"></i> <span>Test connection</span>
             </button>
             <span id="testAiHelp" class="form-text m-0">Uses the saved settings. Save your changes first.</span>
@@ -163,11 +214,13 @@
                 </div>
 
                 <div class="col-12">
-                    <div class="form-check">
-                        <input class="form-check-input" id="clearKey" type="checkbox" name="clearKey" value="1" aria-describedby="clearKeyHelp">
-                        <label class="form-check-label" for="clearKey">Remove saved API key</label>
-                    </div>
-                    <div id="clearKeyHelp" class="form-text">The environment variable key, if set, will be used instead.</div>
+                    <label class="ad-switch-row form-switch" for="clearKey">
+                        <span class="ad-switch-text">
+                            <strong>Remove saved API key</strong>
+                            <span id="clearKeyHelp" class="form-text d-block">The environment variable key, if set, will be used instead.</span>
+                        </span>
+                        <input class="form-check-input ad-switch" id="clearKey" type="checkbox" role="switch" name="clearKey" value="1" aria-describedby="clearKeyHelp">
+                    </label>
                 </div>
             </div>
 
@@ -182,19 +235,19 @@
     <!-- Reference -->
     <section class="cr-card" aria-labelledby="defaultsHeading">
         <h2 id="defaultsHeading" class="ad-section-title mb-3">Provider defaults</h2>
-        <div class="table-responsive">
+        <div class="table-responsive ad-defaults-wrap">
             <table class="ad-defaults">
                 <thead><tr><th scope="col">Provider</th><th scope="col">Default model</th><th scope="col">Endpoint</th></tr></thead>
                 <tbody>
-                    <tr><th scope="row">Command Code</th><td><code><%= providerDefaults.commandcode.model %></code></td><td><code><%= providerDefaults.commandcode.baseUrl %></code></td></tr>
-                    <tr><th scope="row">OpenAI</th><td><code><%= providerDefaults.openai.model %></code></td><td><code><%= providerDefaults.openai.baseUrl %></code></td></tr>
-                    <tr><th scope="row">Anthropic</th><td><code><%= providerDefaults.anthropic.model %></code></td><td><code><%= providerDefaults.anthropic.baseUrl %></code></td></tr>
+                    <tr><th scope="row">Command Code</th><td data-label="Default model"><code><%= providerDefaults.commandcode.model %></code></td><td data-label="Endpoint"><code><%= providerDefaults.commandcode.baseUrl %></code></td></tr>
+                    <tr><th scope="row">OpenAI</th><td data-label="Default model"><code><%= providerDefaults.openai.model %></code></td><td data-label="Endpoint"><code><%= providerDefaults.openai.baseUrl %></code></td></tr>
+                    <tr><th scope="row">Anthropic</th><td data-label="Default model"><code><%= providerDefaults.anthropic.model %></code></td><td data-label="Endpoint"><code><%= providerDefaults.anthropic.baseUrl %></code></td></tr>
                 </tbody>
             </table>
         </div>
         <p class="small ad-muted mt-3 mb-0"><i class="fas fa-shield-alt" aria-hidden="true"></i> Saved credentials are stored outside the repository with restricted file permissions. Environment variables are used when no saved key exists.</p>
     </section>
-</main>
+</div>
 
 <script>
     (function () {

@@ -2,18 +2,29 @@
 <style>
 /* Fallbacks only: :where() has zero specificity so shared comic.css rules win when present. */
 :where(.cr-card) {
-    background: var(--cr-surface, #1c1c1f);
-    border: 1px solid var(--cr-border, #2e2e33);
+    background: var(--cr-surface, #1b1b1f);
+    border: 1px solid var(--cr-border, #34343b);
     border-radius: var(--cr-radius, 14px);
-    box-shadow: var(--cr-shadow, 0 8px 24px rgba(0, 0, 0, .35));
+    box-shadow: var(--cr-shadow, 0 10px 30px rgba(0, 0, 0, .45));
     padding: 1.5rem;
 }
 :where(.cr-page-title) { font-weight: 700; letter-spacing: -.01em; }
 /* Bootstrap display utilities use !important; keep the hidden attribute authoritative */
 .up-page [hidden] { display: none !important; }
 
-.up-page { max-width: 760px; text-align: left; font-family: var(--cr-font, inherit); color: var(--cr-text, #f2f2f3); }
-.up-muted { color: var(--cr-muted, #a3a3ad); }
+.up-page {
+    max-width: 760px;
+    text-align: left;
+    font-family: var(--cr-font, inherit);
+    color: var(--cr-text, #ededf0);
+    /* body already reserves the tab bar; this only makes room for the floating upload bar */
+    padding-bottom: var(--up-bar-space, 0px);
+}
+.up-muted { color: var(--cr-muted, #a6a6b0); }
+.up-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: .5rem 1rem; margin-bottom: 1.25rem; }
+.up-head p { margin: .25rem 0 0; }
+.up-head-link { min-height: 44px; display: inline-flex; align-items: center; gap: .4rem; font-weight: 600; color: var(--cr-accent, #f5a524); text-decoration: none; }
+.up-head-link:hover { text-decoration: underline; color: var(--cr-accent, #f5a524); }
 
 .up-dropzone {
     display: flex;
@@ -27,25 +38,40 @@
     cursor: pointer;
     border: 2px dashed var(--cr-border, #3a3a40);
     border-radius: var(--cr-radius, 14px);
-    background: var(--cr-surface-2, #242428);
-    color: var(--cr-text, #f2f2f3);
+    background: var(--cr-surface-2, #26262b);
+    color: var(--cr-text, #ededf0);
     transition: border-color .15s ease, background-color .15s ease, transform .15s ease;
     margin: 0;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
 }
-.up-dropzone:hover { border-color: var(--cr-accent, #f0a530); }
+.up-dropzone:hover { border-color: var(--cr-accent, #f5a524); }
+.up-dropzone:active { background: color-mix(in srgb, var(--cr-accent, #f5a524) 8%, var(--cr-surface-2, #26262b)); }
 .up-dropzone:focus-within {
-    border-color: var(--cr-accent, #f0a530);
-    outline: 3px solid var(--cr-accent, #f0a530);
+    border-color: var(--cr-accent, #f5a524);
+    outline: 3px solid var(--cr-accent, #f5a524);
     outline-offset: 3px;
 }
 .up-dropzone.is-dragover {
-    border-color: var(--cr-accent, #f0a530);
-    background: color-mix(in srgb, var(--cr-accent, #f0a530) 12%, var(--cr-surface-2, #242428));
+    border-color: var(--cr-accent, #f5a524);
+    background: color-mix(in srgb, var(--cr-accent, #f5a524) 12%, var(--cr-surface-2, #26262b));
     transform: scale(1.01);
 }
 .up-dropzone.is-disabled { cursor: not-allowed; opacity: .55; }
-.up-dropzone .up-icon { font-size: 2.75rem; color: var(--cr-accent, #f0a530); }
-.up-dropzone .up-browse { color: var(--cr-accent, #f0a530); text-decoration: underline; text-underline-offset: 3px; }
+.up-dropzone .up-icon { font-size: 2.75rem; color: var(--cr-accent, #f5a524); }
+.up-dropzone .up-browse { color: var(--cr-accent, #f5a524); text-decoration: underline; text-underline-offset: 3px; }
+/* Touch-first copy: the drag wording only appears with a precise pointer */
+.up-copy-fine { display: none; }
+.up-choose-pill {
+    display: inline-flex; align-items: center; justify-content: center; gap: .5rem;
+    min-height: 48px; padding: .6rem 1.4rem; margin-top: .25rem;
+    border-radius: 999px; font-weight: 700; font-size: 1.05rem;
+    background: var(--cr-accent, #f5a524); color: var(--cr-accent-contrast, #1a1204);
+}
+@media (hover: hover) and (pointer: fine) {
+    .up-copy-fine { display: inline; }
+    .up-copy-touch { display: none; }
+}
 
 .up-types { display: flex; flex-wrap: wrap; gap: .4rem; justify-content: center; margin-top: .25rem; }
 .up-type {
@@ -55,39 +81,83 @@
     padding: .15rem .55rem;
     border-radius: 999px;
     border: 1px solid var(--cr-border, #3a3a40);
-    color: var(--cr-muted, #a3a3ad);
+    color: var(--cr-muted, #a6a6b0);
 }
 
 .up-file {
     display: flex;
     align-items: center;
     gap: .75rem;
-    padding: .75rem 1rem;
-    border: 1px solid var(--cr-border, #2e2e33);
+    padding: .6rem .6rem .6rem 1rem;
+    border: 1px solid var(--cr-border, #34343b);
     border-radius: var(--cr-radius-sm, 8px);
-    background: var(--cr-surface-2, #242428);
+    background: var(--cr-surface-2, #26262b);
 }
-.up-file .up-file-icon { font-size: 1.5rem; color: var(--cr-accent, #f0a530); }
-.up-file .up-file-name { font-weight: 600; word-break: break-all; }
+.up-file .up-file-icon { font-size: 1.5rem; color: var(--cr-accent, #f5a524); }
+.up-file .up-file-name { font-weight: 600; overflow-wrap: anywhere; }
+.up-icon-btn { width: 44px; height: 44px; flex: 0 0 44px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
 
 .up-progress { height: 14px; background: var(--cr-surface-2, #2a2a2f); border-radius: 999px; }
-.up-progress .progress-bar { background-color: var(--cr-accent, #f0a530); transition: width .25s linear; }
-.up-progress .progress-bar.is-error { background-color: var(--cr-danger, #e5534b); }
-.up-progress .progress-bar.is-done { background-color: var(--cr-success, #3fb950); }
+.up-progress .progress-bar { background-color: var(--cr-accent, #f5a524); transition: width .25s linear; }
+.up-progress .progress-bar.is-error { background-color: var(--cr-danger, #f87171); }
+.up-progress .progress-bar.is-done { background-color: var(--cr-success, #4ade80); }
 .up-stats { display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; font-size: .875rem; font-variant-numeric: tabular-nums; }
+#progressLabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
 .up-alert { border-radius: var(--cr-radius-sm, 8px); }
 .up-page .fw-semibold { font-weight: 600; }
 .up-page .min-w-0 { min-width: 0; }
+.up-notes { list-style: none; padding: 0; margin: 1rem 0 0; display: flex; flex-direction: column; gap: .5rem; font-size: .875rem; }
+.up-notes li { display: flex; gap: .6rem; align-items: flex-start; }
+.up-notes i { margin-top: .2rem; width: 1rem; text-align: center; color: var(--cr-muted, #a6a6b0); }
 
+.up-page .btn { min-height: 44px; border-radius: var(--cr-radius-sm, 8px); }
 .up-page .btn-accent {
-    background: var(--cr-accent, #f0a530);
-    border-color: var(--cr-accent, #f0a530);
-    color: var(--cr-accent-contrast, #1a1205);
+    background: var(--cr-accent, #f5a524);
+    border-color: var(--cr-accent, #f5a524);
+    color: var(--cr-accent-contrast, #1a1204);
     font-weight: 600;
 }
 .up-page .btn-accent:hover:not(:disabled) { filter: brightness(1.08); }
-.up-page .btn:focus-visible { outline: 3px solid var(--cr-accent, #f0a530); outline-offset: 2px; box-shadow: none; }
+.up-page .btn:focus-visible { outline: 3px solid var(--cr-accent, #f5a524); outline-offset: 2px; box-shadow: none; }
+.up-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1.5rem; }
+
+/* Phones and tablets: touch-sized controls and a floating progress/action bar above the tab bar */
+@media (max-width: 991.98px) {
+    .up-dropzone { min-height: 0; padding: 1.75rem 1rem; }
+    .up-dropzone .up-icon { font-size: 2.25rem; }
+    .up-page .cr-card { padding: 1rem; }
+    .up-bar.is-floating {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: calc(var(--cr-bottom-nav-h, 0px) + env(safe-area-inset-bottom, 0px));
+        z-index: 1020;
+        padding: .75rem max(1rem, env(safe-area-inset-left, 0px)) .75rem max(1rem, env(safe-area-inset-right, 0px));
+        background: color-mix(in srgb, var(--cr-surface, #1b1b1f) 96%, transparent);
+        border-top: 1px solid var(--cr-border, #34343b);
+        box-shadow: 0 -8px 24px rgba(0, 0, 0, .45);
+        -webkit-backdrop-filter: blur(10px);
+        backdrop-filter: blur(10px);
+    }
+    .up-bar.is-floating > * { max-width: 728px; margin-left: auto; margin-right: auto; }
+    .up-bar.is-floating #progressSection { margin-top: 0 !important; margin-bottom: .6rem; }
+    .up-bar.is-floating .up-progress { height: 10px; }
+    .up-bar.is-floating .up-stats { font-size: .8rem; margin-top: .3rem !important; }
+    .up-bar.is-floating .up-actions { margin-top: 0; }
+    .up-actions { flex-wrap: nowrap; }
+    .up-actions .btn { flex: 1 1 0; min-height: 50px; font-size: 1.05rem; }
+    /* Nothing to act on yet: the "Choose a comic file" pill is the only call to action */
+    .up-bar:not(.is-floating) { display: none; }
+    /* While sending, the disabled "Uploading..." button adds nothing; Cancel gets the full width */
+    .up-bar.is-uploading #uploadButton { display: none; }
+    .up-actions .btn { white-space: nowrap; }
+    /* The bar's main button continues a stopped upload, so the inline retry is redundant here */
+    #retryButton { display: none !important; }
+}
+@media (max-width: 575.98px) {
+    .up-head-link { width: 100%; }
+}
 
 @media (prefers-reduced-motion: reduce) {
     .up-dropzone, .up-progress .progress-bar { transition: none; }
@@ -96,9 +166,14 @@
 }
 </style>
 
-<main class="container content_c mt-4 mb-5 up-page">
-    <h1 class="cr-page-title h3 mb-1">Upload a comic</h1>
-    <p class="up-muted mb-4">Add a comic archive or PDF. Large files are sent in small parts, so you can retry if the connection drops.</p>
+<div class="container content_c mt-4 mb-5 up-page" id="uploadPage">
+    <div class="up-head">
+        <div class="min-w-0">
+            <h1 class="cr-page-title h3 mb-0">Upload a comic</h1>
+            <p class="up-muted">CBZ, CBR or PDF, up to 2 GB. Large files are sent in small parts, so a dropped connection does not mean starting over.</p>
+        </div>
+        <a class="up-head-link" href="/comic/uploads"><i class="fas fa-list-ul" aria-hidden="true"></i> Your uploads</a>
+    </div>
 
     <% if(typeof msg != 'undefined' && msg != ""){ %>
     <div class="alert alert-warning up-alert" role="alert"><%=msg%></div>
@@ -109,15 +184,22 @@
         <form id="uploadForm" method="post" enctype="multipart/form-data" onsubmit="return false;" novalidate>
             <label class="up-dropzone" id="dropzone" for="file1">
                 <i class="fas fa-cloud-upload-alt up-icon" aria-hidden="true"></i>
-                <span class="fs-5 fw-semibold">Drag your comic here</span>
-                <span class="up-muted">or <span class="up-browse">browse your files</span></span>
+                <span class="up-copy-touch">
+                    <span class="up-choose-pill"><i class="fas fa-folder-open" aria-hidden="true"></i> Choose a comic file</span>
+                </span>
+                <span class="up-copy-fine">
+                    <span class="fs-5 fw-semibold d-block">Drag your comic here</span>
+                    <span class="up-muted">or <span class="up-browse">browse your files</span></span>
+                </span>
                 <span class="up-types" aria-label="Accepted file types">
                     <span class="up-type">CBZ</span>
                     <span class="up-type">CBR</span>
                     <span class="up-type">PDF</span>
                 </span>
                 <span class="small up-muted">Maximum file size: 2 GB</span>
-                <input name="fileComicUpload" id="file1" type="file" class="visually-hidden" accept=".cbz,.cbr,.pdf" aria-describedby="fileHelp">
+                <input name="fileComicUpload" id="file1" type="file" class="visually-hidden"
+                       accept=".cbz,.cbr,.pdf,application/zip,application/x-cbz,application/vnd.comicbook+zip,application/x-rar-compressed,application/vnd.rar,application/vnd.comicbook-rar,application/x-cbr,application/pdf"
+                       aria-describedby="fileHelp">
             </label>
             <p id="fileHelp" class="visually-hidden">Accepted types: CBZ, CBR or PDF, up to 2 GB.</p>
 
@@ -127,7 +209,7 @@
                     <div id="fileName" class="up-file-name"></div>
                     <div id="fileSize" class="small up-muted"></div>
                 </div>
-                <button type="button" id="clearFileButton" class="btn btn-sm btn-outline-light" aria-label="Remove selected file">
+                <button type="button" id="clearFileButton" class="btn btn-outline-light up-icon-btn" aria-label="Remove selected file">
                     <i class="fas fa-times" aria-hidden="true"></i>
                 </button>
             </div>
@@ -142,31 +224,34 @@
                 </div>
             </div>
 
-            <div id="progressSection" class="mt-4" hidden>
-                <div class="d-flex justify-content-between align-items-baseline mb-2">
-                    <span id="progressLabel" class="fw-semibold">Uploading</span>
-                    <span id="progressPercent" class="fw-bold" aria-hidden="true">0%</span>
-                </div>
-                <div class="progress up-progress" id="progressWrap" role="progressbar" aria-labelledby="progressLabel" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-                    <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%"></div>
-                </div>
-                <div class="up-stats up-muted mt-2">
-                    <span id="loaded_n_total"></span>
-                    <span id="speedText"></span>
-                    <span id="etaText"></span>
-                </div>
-            </div>
-
             <!-- Status messages for screen readers and sighted users -->
             <p id="status" class="mt-3 mb-0 up-muted" role="status" aria-live="polite"></p>
 
-            <div class="d-flex flex-wrap gap-2 mt-4">
-                <button type="button" id="uploadButton" class="btn btn-accent px-4" onclick="uploadFile()" disabled>
-                    <i class="fas fa-file-upload" aria-hidden="true"></i> <span>Upload</span>
-                </button>
-                <button type="button" id="cancelButton" class="btn btn-outline-light" hidden>
-                    <i class="fas fa-times" aria-hidden="true"></i> Cancel upload
-                </button>
+            <!-- On phones this becomes a bar fixed above the bottom tab bar once a file is chosen -->
+            <div id="uploadBar" class="up-bar">
+                <div id="progressSection" class="mt-4" hidden>
+                    <div class="d-flex justify-content-between align-items-baseline gap-2 mb-2">
+                        <span id="progressLabel" class="fw-semibold">Uploading</span>
+                        <span id="progressPercent" class="fw-bold" aria-hidden="true">0%</span>
+                    </div>
+                    <div class="progress up-progress" id="progressWrap" role="progressbar" aria-labelledby="progressLabel" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                        <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%"></div>
+                    </div>
+                    <div class="up-stats up-muted mt-2">
+                        <span id="loaded_n_total"></span>
+                        <span id="speedText"></span>
+                        <span id="etaText"></span>
+                    </div>
+                </div>
+
+                <div class="up-actions">
+                    <button type="button" id="uploadButton" class="btn btn-accent px-4" onclick="uploadFile()" disabled>
+                        <i class="fas fa-file-upload" aria-hidden="true"></i> <span>Upload</span>
+                    </button>
+                    <button type="button" id="cancelButton" class="btn btn-outline-light" hidden>
+                        <i class="fas fa-times" aria-hidden="true"></i> Cancel upload
+                    </button>
+                </div>
             </div>
 
             <div hidden class="mt-3">
@@ -187,11 +272,21 @@
         </form>
     </section>
 
-    <p class="small up-muted mt-3 mb-0">
-        <i class="fas fa-info-circle" aria-hidden="true"></i>
-        After the upload finishes, the comic is extracted on the server. You will be taken to a status page and can edit the title, author and description when it is ready.
-    </p>
-</main>
+    <ul class="up-notes up-muted">
+        <li id="keepOpenNote">
+            <i class="fas fa-mobile-alt" aria-hidden="true"></i>
+            <span>Keep ComicRoom open until the upload finishes. Switching apps or locking your phone can pause it; when you come back it continues from where it stopped.</span>
+        </li>
+        <li>
+            <i class="fas fa-info-circle" aria-hidden="true"></i>
+            <span>After the upload, the comic is extracted on the server. You can follow it on the status page or in <a href="/comic/uploads">your uploads</a>, and edit the title, author and description when it is ready.</span>
+        </li>
+        <li id="shareTargetNote" hidden>
+            <i class="fas fa-share-alt" aria-hidden="true"></i>
+            <span>With ComicRoom installed, you can also share a comic file to it from your file manager.</span>
+        </li>
+    </ul>
+</div>
 
 <script>
 (function () {
@@ -218,6 +313,61 @@
     var currentXhr = null;
     var resumeState = null; // { file, uploadId, totalChunks, nextChunk }
     var speedSamples = [];
+    var uploadBar = _('uploadBar');
+    var autoResume = false;      // resume automatically when the page becomes visible again
+    var hiddenDuringUpload = false;
+    var wakeLock = null;
+
+    // iOS greys out files whose type it cannot map from accept (.cbz/.cbr usually), so let
+    // every file through there; the extension is validated below and again on the server.
+    var isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (isIOS) fileInput.removeAttribute('accept');
+
+    // Android: mention the share target only when the installed manifest offers one
+    if (/Android/i.test(navigator.userAgent) && window.fetch) {
+        var manifestLink = document.querySelector('link[rel="manifest"]');
+        if (manifestLink) {
+            fetch(manifestLink.href, { credentials: 'same-origin' })
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (m) { if (m && m.share_target) _('shareTargetNote').hidden = false; })
+                .catch(function () {});
+        }
+    }
+
+    // ---------- screen wake lock (keeps the phone awake mid-upload) ----------
+    function requestWakeLock() {
+        if (!('wakeLock' in navigator) || wakeLock || document.visibilityState !== 'visible') return;
+        navigator.wakeLock.request('screen').then(function (lock) {
+            if (!isUploading) { lock.release().catch(function () {}); return; }
+            wakeLock = lock;
+            lock.addEventListener('release', function () { if (wakeLock === lock) wakeLock = null; });
+        }).catch(function () { /* denied (battery saver, iframe, ...) - uploads still work */ });
+    }
+    function releaseWakeLock() {
+        if (!wakeLock) return;
+        var lock = wakeLock;
+        wakeLock = null;
+        lock.release().catch(function () {});
+    }
+
+    // ---------- floating action bar on phones ----------
+    var barQuery = window.matchMedia ? window.matchMedia('(max-width: 991.98px)') : null;
+    function updateBar() {
+        var floating = !!(barQuery && barQuery.matches) && (isUploading || !!selectedFile || !!resumeState);
+        uploadBar.classList.toggle('is-floating', floating);
+        uploadBar.classList.toggle('is-uploading', isUploading);
+        document.getElementById('uploadPage').style.setProperty('--up-bar-space', floating ? uploadBar.offsetHeight + 'px' : '0px');
+    }
+    if (barQuery) {
+        if (barQuery.addEventListener) barQuery.addEventListener('change', updateBar);
+        else if (barQuery.addListener) barQuery.addListener(updateBar);
+    }
+    if (window.ResizeObserver) new ResizeObserver(function () { updateBar(); }).observe(uploadBar);
+
+    function updateUploadLabel() {
+        if (isUploading) return;
+        uploadButton.querySelector('span').textContent = resumeState ? 'Resume upload' : 'Upload';
+    }
 
     // ---------- helpers ----------
     function formatBytes(bytes) {
@@ -288,10 +438,14 @@
         cancelButton.hidden = !active;
         cancelButton.disabled = false;
         if (active) {
+            hiddenDuringUpload = document.visibilityState === 'hidden';
             window.addEventListener('beforeunload', beforeUnloadHandler);
+            requestWakeLock();
         } else {
             window.removeEventListener('beforeunload', beforeUnloadHandler);
+            releaseWakeLock();
         }
+        updateBar();
     }
 
     function beforeUnloadHandler(event) {
@@ -332,15 +486,20 @@
         _('fileIcon').className = (getExtension(file.name) === 'pdf' ? 'fas fa-file-pdf' : 'fas fa-file-archive') + ' up-file-icon';
         _('fileSummary').hidden = false;
 
+        autoResume = false;
         if (error) {
             selectedFile = null;
             uploadButton.disabled = true;
+            updateUploadLabel();
+            updateBar();
             showError(error, false);
             return;
         }
 
         selectedFile = file;
         uploadButton.disabled = false;
+        updateUploadLabel();
+        updateBar();
         setStatus('Ready to upload ' + file.name + ' (' + formatBytes(file.size) + ').');
     }
 
@@ -351,7 +510,10 @@
         _('fileSummary').hidden = true;
         _('progressSection').hidden = true;
         uploadButton.disabled = true;
+        autoResume = false;
         hideError();
+        updateUploadLabel();
+        updateBar();
         setStatus('');
     }
 
@@ -416,6 +578,13 @@
             return;
         }
         hideError();
+        autoResume = false;
+
+        // After a stopped upload the main button continues from the last confirmed part
+        if (resumeState && resumeState.file === file) {
+            startChunkedUpload(file, resumeState);
+            return;
+        }
 
         var methodInput = document.querySelector('input[name="uploadMethod"]:checked');
         var uploadMethod = methodInput ? methodInput.value : 'chunked';
@@ -430,6 +599,7 @@
     retryButton.addEventListener('click', function () {
         if (isUploading) return;
         hideError();
+        autoResume = false;
         if (resumeState) {
             startChunkedUpload(resumeState.file, resumeState);
         } else {
@@ -512,6 +682,8 @@
                     _('progressSection').hidden = true;
                     _('speedText').textContent = '';
                     _('etaText').textContent = '';
+                    updateUploadLabel();
+                    updateBar();
                     setStatus('Upload cancelled. Your file is still selected; press Upload to start again.');
                     return;
                 }
@@ -526,12 +698,22 @@
                 _('speedText').textContent = '';
                 _('etaText').textContent = '';
                 _('loaded_n_total').textContent = formatBytes(chunkIndex * CHUNK_SIZE) + ' of ' + formatBytes(file.size) + ' sent';
+                _('progressLabel').textContent = fatal ? 'Upload failed' : 'Upload stopped';
+                updateUploadLabel();
+                updateBar();
                 if (fatal) {
                     showError('The server did not accept this upload: ' + message, false);
+                } else if (hiddenDuringUpload || document.visibilityState === 'hidden') {
+                    // Most likely the phone suspended the page; carry on once it is back in front
+                    autoResume = document.visibilityState === 'hidden';
+                    showError('The upload paused at ' + Math.floor((chunkIndex * CHUNK_SIZE / file.size) * 100) + '% while ComicRoom was in the background. ' + (autoResume ? 'It continues when you return.' : 'Tap Resume upload to continue from where it stopped.'), true);
                 } else {
-                    showError('The upload stopped at ' + Math.floor((chunkIndex * CHUNK_SIZE / file.size) * 100) + '%. ' + message + ' Retry continues from where it stopped.', true);
+                    showError('The upload stopped at ' + Math.floor((chunkIndex * CHUNK_SIZE / file.size) * 100) + '%. ' + message + ' Resume continues from where it stopped.', true);
                 }
                 setStatus('Upload failed.');
+                var box = _('errorBox');
+                // centre it: "nearest" would leave it under the floating bar on phones
+                if (box.scrollIntoView) box.scrollIntoView({ block: 'center', behavior: 'smooth' });
                 return;
             }
         }
@@ -542,9 +724,11 @@
         _('etaText').textContent = '';
         _('progressLabel').textContent = 'Upload complete';
         isUploading = false;
+        releaseWakeLock();
         window.removeEventListener('beforeunload', beforeUnloadHandler);
         cancelButton.hidden = true;
         uploadButton.querySelector('span').textContent = 'Uploaded';
+        updateBar();
         setStatus('Upload complete. Opening the processing status page...');
 
         setTimeout(function () {
@@ -659,6 +843,22 @@
             xhr.send(formdata);
         });
     }
+
+    // ---------- background / foreground ----------
+    document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'hidden') {
+            if (isUploading) hiddenDuringUpload = true;
+            return;
+        }
+        // The browser drops the wake lock whenever the page is hidden
+        if (isUploading) requestWakeLock();
+        if (autoResume && resumeState && !isUploading) {
+            autoResume = false;
+            hideError();
+            setStatus('Welcome back. Resuming the upload...');
+            startChunkedUpload(resumeState.file, resumeState);
+        }
+    });
 
     // ---------- regular (single request) upload, kept as a fallback ----------
     function startRegularUpload(file) {
