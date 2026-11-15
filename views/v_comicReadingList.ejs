@@ -1,29 +1,68 @@
-<%-include("header")%>
-
-<div id="content_body" class="container content_c mt-2">
-  <div id="bodyComic" class="row justify-content-center">
-    <% data.forEach(d=>{ comic = d.comic %>
-
-      <a style="text-decoration: none;" class="col-md-3" href="comic/show/<%-comic.id%>">
-
-        <div class="d-flex align-items-center" style="height: 300px;  border-radius: 2.5%;"> 
-          <img style="max-height: 100%;max-width: 100%;" src="public\uploads\<%=comic.savedFolder%>\<%=comic.coverImage%>" class="mx-auto d-block coverImage" alt="<%=comic.title%>">
-        </div>
-
-        <div class="d-flex justify-content-evenly">
-          <p class="text-justify text-white" style="overflow:hidden;width: 100px;height:50px"><%=comic.title%></p>
-      <p> <%=(d.pageNumber+1)%>/<%=comic.totalPages%></p>
-          
-      </div>
-      </a>
-    <%  }) %>
-  </div>
-  <div class="row" style="visibility: hidden;">
+<%- include("header") %>
+<%
+  var keyword = (typeof searchKeywords !== 'undefined' && searchKeywords) ? searchKeywords : '';
+  var rows = (typeof data !== 'undefined' && Array.isArray(data)) ? data : [];
+  var entries = rows.filter(function (d) { return d && d.comic; });
+  var EAGER_COUNT = 6;
+  // pageNumber is stored 0-based by the reader (viewComic.js persists its xView index)
+  function progressOf(entry) {
+    var total = parseInt(entry.comic.totalPages, 10) || 0;
+    var current = (parseInt(entry.pageNumber, 10) || 0) + 1;
+    if (total > 0 && current > total) current = total;
+    var percent = total > 0 ? Math.round((current / total) * 100) : 0;
+    return { current: current, total: total, percent: percent };
+  }
+%>
+<div id="content_body" class="container-xl cr-page">
+  <div class="cr-page-head">
     <div>
-      <button id="loadMore" class="btn btn-secondary">Load More</button>
+      <h1 class="cr-page-title">Continue reading</h1>
+      <% if (keyword) { %>
+        <p class="cr-page-sub">In your reading list, matching <strong class="text-white">&ldquo;<%= keyword %>&rdquo;</strong> &middot; <a href="/onread">Clear search</a></p>
+      <% } else { %>
+        <p class="cr-page-sub">Comics you have started, most recent first.</p>
+      <% } %>
     </div>
   </div>
-</div>
-<script src="public/script/loadMoreComic.js"></script>
 
-<%-include("footer")%>
+  <% if (entries.length === 0) { %>
+    <div class="cr-empty-state">
+      <span class="cr-empty-icon" aria-hidden="true"><i class="fas fa-book-open"></i></span>
+      <h2>Your reading list is empty</h2>
+      <p>Open a comic from the gallery and read a few pages. It will show up here so you can pick up where you left off.</p>
+      <div class="cr-empty-actions">
+        <a class="btn cr-btn-accent" href="/comic">Browse the gallery</a>
+      </div>
+    </div>
+  <% } else { %>
+    <ul id="bodyComic" class="cr-grid" data-feed="onread" data-offset="<%= rows.length %>" data-page-size="12" data-keyword="<%= keyword %>" aria-label="Reading list">
+      <% entries.forEach(function (d, i) { var comic = d.comic; var p = progressOf(d); %>
+        <li data-id="<%= comic.id %>">
+          <a class="cr-comic-card" href="/comic/show/<%= encodeURIComponent(comic.id) %>">
+            <div class="cr-cover">
+              <img src="/comic/cover/<%= encodeURIComponent(comic.id) %>" alt="" width="400" height="600" decoding="async"<% if (i >= EAGER_COUNT) { %> loading="lazy"<% } else if (i === 0) { %> fetchpriority="high"<% } %>>
+            </div>
+            <div class="cr-comic-meta">
+              <h2 class="cr-comic-title"><%= comic.title %></h2>
+              <% if (comic.author) { %><p class="cr-comic-author"><%= comic.author %></p><% } %>
+              <% if (p.total > 0) { %>
+                <div class="cr-progress" role="progressbar" aria-label="Reading progress" aria-valuemin="0" aria-valuemax="<%= p.total %>" aria-valuenow="<%= p.current %>" aria-valuetext="Page <%= p.current %> of <%= p.total %>">
+                  <span style="width: <%= p.percent %>%"></span>
+                </div>
+                <p class="cr-progress-label">Page <%= p.current %> of <%= p.total %></p>
+              <% } %>
+            </div>
+          </a>
+        </li>
+      <% }) %>
+    </ul>
+
+    <div class="cr-feed-footer">
+      <div id="feedStatus" role="status" aria-live="polite"></div>
+      <button id="loadMore" type="button" class="btn cr-btn-ghost"<% if (rows.length < 12) { %> hidden<% } %>>Load more</button>
+    </div>
+    <div id="feedSentinel" class="cr-sentinel" aria-hidden="true"></div>
+    <script src="/public/script/loadMoreComic.js?v=2" defer></script>
+  <% } %>
+</div>
+<%- include("footer") %>

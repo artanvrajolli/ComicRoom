@@ -1,272 +1,443 @@
 <%-include("header")%>
+<%
+    var jobStatus = job.status || 'pending';
+    var jobProgress = Number(job.progress) || 0;
+    if (jobStatus === 'completed') { jobProgress = 100; }
+    // Stage mapping mirrors utils/jobProcessor.js: pending -> processing (10..84 extracting, 85..99 finishing) -> completed/failed.
+    // Steps are rendered by the inline script below.
+    var stageTitles = {
+        pending: 'Waiting in the queue',
+        processing: jobProgress >= 85 ? 'Reading details and saving' : 'Extracting pages',
+        completed: 'Your comic is ready',
+        failed: 'Processing failed'
+    };
+    var hasComicLinks = jobStatus === 'completed' && job.comicId && job.comicFolderId;
+%>
 <style>
-.status-container {
-    max-width: 600px;
-    margin: 50px auto;
-    padding: 30px;
-    border-radius: 10px;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-    background: white;
+:where(.cr-card) {
+    background: var(--cr-surface, #1c1c1f);
+    border: 1px solid var(--cr-border, #2e2e33);
+    border-radius: var(--cr-radius, 14px);
+    box-shadow: var(--cr-shadow, 0 8px 24px rgba(0, 0, 0, .35));
+    padding: 1.75rem;
 }
+:where(.cr-page-title) { font-weight: 700; letter-spacing: -.01em; }
+/* Bootstrap display utilities use !important; keep the hidden attribute authoritative */
+.st-page [hidden] { display: none !important; }
 
-.progress-circle {
-    width: 120px;
-    height: 120px;
-    border-radius: 50%;
-    border: 8px solid #f3f3f3;
-    border-top: 8px solid #28a745;
-    animation: spin 1s linear infinite;
-    margin: 0 auto 20px;
+.st-page { max-width: 680px; text-align: left; color: var(--cr-text, #f2f2f3); font-family: var(--cr-font, inherit); }
+.st-muted { color: var(--cr-muted, #a3a3ad); }
+.st-file { word-break: break-all; }
+
+.st-steps { list-style: none; display: flex; padding: 0; margin: 1.75rem 0 1.5rem; counter-reset: step; }
+.st-step { flex: 1; position: relative; text-align: center; font-size: .85rem; color: var(--cr-muted, #a3a3ad); }
+.st-step::before {
+    /* connector line */
+    content: "";
+    position: absolute;
+    top: 15px;
+    left: -50%;
+    width: 100%;
+    height: 2px;
+    background: var(--cr-border, #3a3a40);
+    z-index: 0;
 }
-
-.progress-circle.completed {
-    border-top: 8px solid #28a745;
-    animation: none;
-}
-
-.progress-circle.failed {
-    border-top: 8px solid #dc3545;
-    animation: none;
-}
-
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-
-.status-text {
-    text-align: center;
-    font-size: 18px;
-    margin-bottom: 20px;
-}
-
-.progress-bar-container {
-    background-color: #f8f9fa;
-    border-radius: 25px;
-    padding: 3px;
-    margin: 20px 0;
-}
-
-.progress-bar {
-    height: 30px;
-    border-radius: 25px;
-    transition: width 0.3s ease;
-    display: flex;
+.st-step:first-child::before { display: none; }
+.st-dot {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: white;
-    font-weight: bold;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 2px solid var(--cr-border, #3a3a40);
+    background: var(--cr-surface, #1c1c1f);
+    font-size: .8rem;
+    font-weight: 700;
+    margin-bottom: .4rem;
 }
+.st-step.is-done { color: var(--cr-text, #f2f2f3); }
+.st-step.is-done .st-dot { background: var(--cr-success, #3fb950); border-color: var(--cr-success, #3fb950); color: #0d1f10; }
+.st-step.is-done::before, .st-step.is-active::before { background: var(--cr-success, #3fb950); }
+.st-step.is-active { color: var(--cr-text, #f2f2f3); font-weight: 600; }
+.st-step.is-active .st-dot { border-color: var(--cr-accent, #f0a530); color: var(--cr-accent, #f0a530); box-shadow: 0 0 0 4px color-mix(in srgb, var(--cr-accent, #f0a530) 25%, transparent); }
+.st-step.is-failed { color: var(--cr-danger, #e5534b); font-weight: 600; }
+.st-step.is-failed .st-dot { background: var(--cr-danger, #e5534b); border-color: var(--cr-danger, #e5534b); color: #fff; }
 
-.btn-redirect {
-    display: none;
-    margin-top: 20px;
+.st-progress { height: 14px; background: var(--cr-surface-2, #2a2a2f); border-radius: 999px; }
+.st-progress .progress-bar { background-color: var(--cr-accent, #f0a530); transition: width .4s ease; }
+.st-progress .progress-bar.is-done { background-color: var(--cr-success, #3fb950); }
+.st-progress .progress-bar.is-failed { background-color: var(--cr-danger, #e5534b); }
+
+.st-headline { display: flex; align-items: center; gap: .75rem; }
+.st-headline-icon { font-size: 1.6rem; color: var(--cr-accent, #f0a530); }
+.st-headline-icon.is-done { color: var(--cr-success, #3fb950); }
+.st-headline-icon.is-failed { color: var(--cr-danger, #e5534b); }
+.st-spin { animation: st-spin 1.1s linear infinite; }
+@keyframes st-spin { to { transform: rotate(360deg); } }
+
+.st-page .btn-accent {
+    background: var(--cr-accent, #f0a530);
+    border-color: var(--cr-accent, #f0a530);
+    color: var(--cr-accent-contrast, #1a1205);
+    font-weight: 600;
+}
+.st-page .btn-accent:hover { filter: brightness(1.08); color: var(--cr-accent-contrast, #1a1205); }
+.st-page .btn:focus-visible, .st-page a:focus-visible { outline: 3px solid var(--cr-accent, #f0a530); outline-offset: 2px; box-shadow: none; }
+.st-page .fw-semibold { font-weight: 600; }
+.st-meta { font-size: .8rem; }
+.st-page .btn-link { color: var(--cr-accent, #f0a530); }
+.st-page .min-w-0 { min-width: 0; }
+
+@media (max-width: 480px) {
+    .st-step { font-size: .72rem; }
+    .cr-card { padding: 1.25rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .st-spin { animation: none; }
+    .st-progress .progress-bar { transition: none; }
 }
 </style>
 
-<div class="container content_c mt-3">
-    <div class="status-container" data-job-id="<%=job.jobId%>" data-current-status="<%=job.status%>" data-current-progress="<%=job.progress%>" data-comic-id="<%=job.comicId || ''%>" data-comic-folder-id="<%=job.comicFolderId || ''%>">
+<main class="container content_c mt-4 mb-5 st-page">
+    <div class="cr-card status-container"
+         data-job-id="<%=job.jobId%>"
+         data-current-status="<%=jobStatus%>"
+         data-current-progress="<%=jobProgress%>"
+         data-comic-id="<%=job.comicId || ''%>"
+         data-comic-folder-id="<%=job.comicFolderId || ''%>">
+
         <% if(typeof msg != 'undefined' && msg != ""){ %>
-        <div class="alert alert-info text-center"><%=msg%></div>
-        <%}%>
+        <div class="alert alert-info mb-3" role="status"><%=msg%></div>
+        <% } %>
 
-        <div class="text-center">
-            <h2>Processing Your Comic</h2>
-            <div id="progressCircle" class="progress-circle"></div>
-            
-            <div id="statusText" class="status-text">
-                <% if(job.status === 'pending') { %>
-                    Waiting in queue...
-                <% } else if(job.status === 'processing') { %>
-                    Extracting comic files...
-                <% } else if(job.status === 'completed') { %>
-                    Processing completed!
-                <% } else if(job.status === 'failed') { %>
-                    Processing failed
-                <% } %>
+        <div class="st-headline">
+            <i id="headlineIcon" aria-hidden="true" class="fas <%= jobStatus === 'completed' ? 'fa-check-circle is-done' : (jobStatus === 'failed' ? 'fa-times-circle is-failed' : 'fa-spinner st-spin') %> st-headline-icon"></i>
+            <div class="min-w-0">
+                <h1 class="cr-page-title h4 mb-0" id="statusText"><%= stageTitles[jobStatus] || 'Processing your comic' %></h1>
+                <div class="st-muted st-file small" id="fileName"><span class="visually-hidden">File: </span><%=job.fileName%></div>
             </div>
+        </div>
 
-            <div class="progress-bar-container">
-                <div id="progressBar" class="progress-bar bg-success" style="width: 0%;">
-                    <span id="progressText">0%</span>
-                </div>
+        <ol class="st-steps" id="stageList" aria-label="Processing steps">
+            <li class="st-step" data-stage="queued"><span class="st-dot" aria-hidden="true">1</span><br>Queued<span class="visually-hidden st-step-state"></span></li>
+            <li class="st-step" data-stage="extracting"><span class="st-dot" aria-hidden="true">2</span><br>Extracting<span class="visually-hidden st-step-state"></span></li>
+            <li class="st-step" data-stage="processing"><span class="st-dot" aria-hidden="true">3</span><br>Processing<span class="visually-hidden st-step-state"></span></li>
+            <li class="st-step" data-stage="done"><span class="st-dot" aria-hidden="true">4</span><br>Done<span class="visually-hidden st-step-state"></span></li>
+        </ol>
+
+        <div class="d-flex justify-content-between align-items-baseline mb-2">
+            <span class="fw-semibold" id="progressLabel">Progress</span>
+            <span class="fw-bold" id="progressText" aria-hidden="true"><%= jobProgress %>%</span>
+        </div>
+        <div class="progress st-progress" id="progressWrap" role="progressbar" aria-labelledby="progressLabel" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<%= jobProgress %>">
+            <div id="progressBar" class="progress-bar <%= jobStatus === 'completed' ? 'is-done' : (jobStatus === 'failed' ? 'is-failed' : '') %>" style="width: <%= jobProgress %>%;"></div>
+        </div>
+
+        <!-- Announced to screen readers when the stage changes -->
+        <p id="liveStatus" class="visually-hidden" role="status" aria-live="polite"></p>
+
+        <div id="errorBox" class="alert alert-danger mt-4 mb-0" role="alert" <%= jobStatus === 'failed' ? '' : 'hidden' %>>
+            <div class="fw-semibold"><i class="fas fa-exclamation-triangle" aria-hidden="true"></i> We could not process this file.</div>
+            <div id="errorMessage" class="small mt-1"><%= job.errorMessage || 'The file may be damaged or in an unsupported format.' %></div>
+            <div class="small mt-2">Check that the file opens on your computer, then try uploading it again.</div>
+        </div>
+
+        <div id="connectionNotice" class="alert alert-warning mt-4 mb-0 small" role="status" hidden></div>
+
+        <div id="doneActions" class="d-flex flex-wrap gap-2 mt-4" <%= hasComicLinks ? '' : 'hidden' %>>
+            <a id="btnOpenComic" class="btn btn-accent btn-lg px-4" href="<%= hasComicLinks ? '/comic/show/' + job.comicId : '#' %>">
+                <i class="fas fa-book-open" aria-hidden="true"></i> Open comic
+            </a>
+            <a id="btnRedirect" class="btn btn-outline-light btn-lg" href="<%= hasComicLinks ? '/comic/' + job.comicFolderId + '/' + job.comicId : '#' %>">
+                <i class="fas fa-pen" aria-hidden="true"></i> Edit details
+            </a>
+        </div>
+
+        <div id="redirectInfo" class="small st-muted mt-3" hidden>
+            Opening the edit page in <span id="countdown">5</span>s.
+            <button type="button" id="stayButton" class="btn btn-link btn-sm p-0 align-baseline">Stay on this page</button>
+        </div>
+
+        <div id="failedActions" class="d-flex flex-wrap gap-2 mt-4" <%= jobStatus === 'failed' ? '' : 'hidden' %>>
+            <a class="btn btn-accent" href="/comic/upload"><i class="fas fa-redo" aria-hidden="true"></i> Upload another file</a>
+        </div>
+
+        <hr class="my-4" style="border-color: var(--cr-border, #3a3a40);">
+
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <a href="/comic" class="btn btn-sm btn-outline-secondary text-light"><i class="fas fa-arrow-left" aria-hidden="true"></i> Back to gallery</a>
+            <div class="st-meta st-muted text-end">
+                <div id="pollStatus"><%= (jobStatus === 'completed' || jobStatus === 'failed') ? 'Finished' : 'Checking for updates automatically' %></div>
+                <div id="lastUpdate" hidden>Last checked: <span id="timestamp">--</span></div>
             </div>
-
-            <div id="fileName" class="text-muted">
-                <strong>File:</strong> <%=job.fileName%>
-            </div>
-
-            <div id="debugInfo" class="mt-2" style="font-size: 12px; color: #6c757d;">
-                <div>Job ID: <%=job.jobId%></div>
-                <div id="lastUpdate">Last updated: <span id="timestamp">--</span></div>
-                <div id="pollStatus" style="color: #007bff;">Ready to check status...</div>
-            </div>
-
-            <% if(job.status === 'failed' && job.errorMessage) { %>
-            <div class="alert alert-danger mt-3">
-                <strong>Error:</strong> <%=job.errorMessage%>
-            </div>
-            <% } %>
-
-            <div id="redirectInfo" class="mt-3" style="display: none;">
-                <p class="text-success">Comic processed successfully!</p>
-                <p>Redirecting to comic details in <span id="countdown">5</span> seconds...</p>
-            </div>
-
-            <a id="btnRedirect" href="#" class="btn btn-success btn-redirect">Review Comic Details</a>
-            <a href="/comic" class="btn btn-secondary mt-3">Back to Gallery</a>
         </div>
     </div>
-</div>
+</main>
 
 <script>
-const statusContainer = document.querySelector('.status-container');
-let jobId = statusContainer.dataset.jobId;
-let currentStatus = statusContainer.dataset.currentStatus;
-let isPolling = false;
+(function () {
+    var statusContainer = document.querySelector('.status-container');
+    var jobId = statusContainer.dataset.jobId;
+    var currentStatus = statusContainer.dataset.currentStatus;
+    var lastProgress = Number(statusContainer.dataset.currentProgress) || 0;
+    var sawActiveState = currentStatus === 'pending' || currentStatus === 'processing';
 
-document.getElementById('progressBar').style.width = `${statusContainer.dataset.currentProgress}%`;
-document.getElementById('progressText').textContent = `${statusContainer.dataset.currentProgress}%`;
+    var MIN_DELAY = 1500;
+    var MAX_DELAY = 10000;
+    var MAX_ERROR_DELAY = 30000;
+    var delay = MIN_DELAY;
+    var errorCount = 0;
+    var pollTimer = null;
+    var inFlight = false;
+    var finished = false;
+    var countdownTimer = null;
+    var lastAnnounced = '';
+    var quiet = true; // no announcement for the initial render
 
-function updateStatus() {
-    if (isPolling) return; // Prevent multiple simultaneous requests
-    isPolling = true;
-    
-    // Update debug info
-    document.getElementById('pollStatus').textContent = 'Checking status...';
-    document.getElementById('pollStatus').style.color = '#ffc107';
-    
-    console.log('Checking status for job:', jobId);
-    
-    fetch(`/ajax/upload/status/${jobId}`)
-        .then(response => {
-            console.log('Response status:', response.status);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return response.json();
-        })
-        .then(data => {
-            console.log('Status data received:', data);
-            
-            // Update timestamp
-            document.getElementById('timestamp').textContent = new Date().toLocaleTimeString();
-            document.getElementById('pollStatus').textContent = 'Status updated successfully';
-            document.getElementById('pollStatus').style.color = '#28a745';
-            
-            const progressBar = document.getElementById('progressBar');
-            const progressText = document.getElementById('progressText');
-            const statusText = document.getElementById('statusText');
-            const progressCircle = document.getElementById('progressCircle');
-            
-            // Update progress
-            progressBar.style.width = data.progress + '%';
-            progressText.textContent = data.progress + '%';
-            
-            // Update status text
-            switch(data.status) {
-                case 'pending':
-                    statusText.textContent = 'Waiting in queue...';
-                    progressCircle.className = 'progress-circle'; // Reset classes
-                    break;
-                case 'processing':
-                    statusText.textContent = 'Extracting comic files...';
-                    progressCircle.className = 'progress-circle'; // Reset classes
-                    break;
-                case 'completed':
-                    statusText.textContent = 'Processing completed!';
-                    progressCircle.className = 'progress-circle completed';
-                    document.getElementById('pollStatus').textContent = 'Processing complete! Redirecting...';
-                    document.getElementById('pollStatus').style.color = '#28a745';
-                    
-                    if (data.comicId && data.comicFolderId) {
-                        showRedirectInfo(data.comicFolderId, data.comicId);
-                    }
-                    return; // Stop polling
-                case 'failed':
-                    statusText.textContent = 'Processing failed';
-                    progressCircle.className = 'progress-circle failed';
-                    document.getElementById('pollStatus').textContent = 'Processing failed';
-                    document.getElementById('pollStatus').style.color = '#dc3545';
-                    
-                    if (data.errorMessage) {
-                        statusText.innerHTML += '<br><small class="text-danger">' + data.errorMessage + '</small>';
-                    }
-                    return; // Stop polling
-                default:
-                    console.warn('Unknown status:', data.status);
-            }
-            
-            currentStatus = data.status;
-            
-            // Continue polling if not completed or failed
-            if (data.status === 'pending' || data.status === 'processing') {
-                setTimeout(() => {
-                    isPolling = false;
-                    updateStatus();
-                }, 2000); // Poll every 2 seconds
-            } else {
-                isPolling = false;
-            }
-        })
-        .catch(error => {
-            console.error('Error checking status:', error);
-            isPolling = false;
-            
-            // Update debug info
-            document.getElementById('pollStatus').textContent = 'Error checking status - retrying...';
-            document.getElementById('pollStatus').style.color = '#dc3545';
-            
-            // Show error message to user
-            const statusText = document.getElementById('statusText');
-            statusText.innerHTML = 'Error checking status. <br><small class="text-muted">Retrying in 5 seconds...</small>';
-            
-            // Retry after 5 seconds on error
-            setTimeout(updateStatus, 5000);
-        });
-}
+    var stageOrder = ['queued', 'extracting', 'processing', 'done'];
+    var stageNames = { queued: 'Queued', extracting: 'Extracting', processing: 'Processing', done: 'Done' };
 
-function showRedirectInfo(comicFolderId, comicId) {
-    console.log('Showing redirect info for:', comicFolderId, comicId);
-    
-    const redirectInfo = document.getElementById('redirectInfo');
-    const btnRedirect = document.getElementById('btnRedirect');
-    const countdown = document.getElementById('countdown');
-    
-    redirectInfo.style.display = 'block';
-    btnRedirect.style.display = 'inline-block';
-    btnRedirect.href = `/comic/${comicFolderId}/${comicId}`;
-    
-    let seconds = 5; // Give user more time to see the success
-    countdown.textContent = seconds;
-    
-    const timer = setInterval(() => {
-        seconds--;
-        countdown.textContent = seconds;
-        
-        if (seconds <= 0) {
-            clearInterval(timer);
-            console.log('Redirecting to:', btnRedirect.href);
-            window.location.href = btnRedirect.href;
+    function el(id) { return document.getElementById(id); }
+
+    function stageFor(status, progress) {
+        if (status === 'completed') return 'done';
+        if (status === 'failed') {
+            // Highlight the step that was running when it failed
+            if (progress >= 85) return 'processing';
+            return progress >= 10 ? 'extracting' : 'queued';
         }
-    }, 1000);
-}
-
-// Initialize based on current status
-console.log('Initial status:', currentStatus);
-
-if (currentStatus === 'completed') {
-    document.getElementById('progressCircle').className = 'progress-circle completed';
-    if (statusContainer.dataset.comicId && statusContainer.dataset.comicFolderId) {
-        showRedirectInfo(statusContainer.dataset.comicFolderId, statusContainer.dataset.comicId);
+        if (status === 'processing') return progress >= 85 ? 'processing' : 'extracting';
+        return 'queued';
     }
-} else if (currentStatus === 'failed') {
-    document.getElementById('progressCircle').className = 'progress-circle failed';
-} else {
-    // Start polling for pending or processing jobs
-    console.log('Starting polling...');
-    setTimeout(updateStatus, 1000); // Start checking after 1 second
-}
+
+    function titleFor(status, progress) {
+        switch (status) {
+            case 'pending': return 'Waiting in the queue';
+            case 'processing': return progress >= 85 ? 'Reading details and saving' : 'Extracting pages';
+            case 'completed': return 'Your comic is ready';
+            case 'failed': return 'Processing failed';
+            default: return 'Processing your comic';
+        }
+    }
+
+    function announce(text) {
+        if (quiet) {
+            lastAnnounced = text;
+            return;
+        }
+        if (text && text !== lastAnnounced) {
+            lastAnnounced = text;
+            el('liveStatus').textContent = text;
+        }
+    }
+
+    function render(status, progress, errorMessage) {
+        progress = status === 'completed' ? 100 : Math.max(0, Math.min(100, Number(progress) || 0));
+        var stage = stageFor(status, progress);
+        var activeIndex = stageOrder.indexOf(stage);
+
+        Array.prototype.forEach.call(document.querySelectorAll('#stageList .st-step'), function (item, index) {
+            var state = '';
+            item.classList.remove('is-done', 'is-active', 'is-failed');
+            item.removeAttribute('aria-current');
+            if (status === 'failed' && index === activeIndex) {
+                item.classList.add('is-failed');
+                state = ' (failed)';
+            } else if (index < activeIndex || (status === 'completed' && index === activeIndex)) {
+                item.classList.add('is-done');
+                state = ' (complete)';
+            } else if (index === activeIndex) {
+                item.classList.add('is-active');
+                item.setAttribute('aria-current', 'step');
+                state = ' (in progress)';
+            }
+            item.querySelector('.st-step-state').textContent = state;
+        });
+
+        var bar = el('progressBar');
+        bar.style.width = progress + '%';
+        bar.classList.toggle('is-done', status === 'completed');
+        bar.classList.toggle('is-failed', status === 'failed');
+        el('progressText').textContent = progress + '%';
+        el('progressWrap').setAttribute('aria-valuenow', String(progress));
+
+        var icon = el('headlineIcon');
+        if (status === 'completed') icon.className = 'fas fa-check-circle st-headline-icon is-done';
+        else if (status === 'failed') icon.className = 'fas fa-times-circle st-headline-icon is-failed';
+        else icon.className = 'fas fa-spinner st-spin st-headline-icon';
+
+        var title = titleFor(status, progress);
+        el('statusText').textContent = title;
+
+        if (status === 'failed') {
+            el('errorBox').hidden = false;
+            if (errorMessage) el('errorMessage').textContent = errorMessage; // textContent: never inject HTML
+            el('failedActions').hidden = false;
+            announce('Processing failed. ' + (errorMessage || ''));
+        } else if (status === 'completed') {
+            announce('Your comic is ready.');
+        } else {
+            announce(stageNames[stage] + ': ' + title + '.');
+        }
+    }
+
+    function showDoneActions(comicFolderId, comicId, autoRedirect) {
+        var openLink = el('btnOpenComic');
+        var editLink = el('btnRedirect');
+        openLink.href = '/comic/show/' + encodeURIComponent(comicId);
+        editLink.href = '/comic/' + encodeURIComponent(comicFolderId) + '/' + encodeURIComponent(comicId);
+        el('doneActions').hidden = false;
+
+        if (!autoRedirect) return;
+
+        // Only auto-redirect when the user watched processing finish on this page
+        var seconds = 5;
+        el('countdown').textContent = seconds;
+        el('redirectInfo').hidden = false;
+        countdownTimer = setInterval(function () {
+            seconds--;
+            el('countdown').textContent = seconds;
+            if (seconds <= 0) {
+                clearInterval(countdownTimer);
+                window.location.href = editLink.href;
+            }
+        }, 1000);
+        editLink.focus();
+    }
+
+    el('stayButton').addEventListener('click', function () {
+        if (countdownTimer) clearInterval(countdownTimer);
+        el('redirectInfo').hidden = true;
+        el('btnOpenComic').focus();
+    });
+
+    function setPollStatus(text) {
+        el('pollStatus').textContent = text;
+    }
+
+    function finish() {
+        finished = true;
+        if (pollTimer) clearTimeout(pollTimer);
+        pollTimer = null;
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+        setPollStatus('Finished');
+    }
+
+    function schedule(ms) {
+        if (finished) return;
+        if (pollTimer) clearTimeout(pollTimer);
+        if (document.visibilityState === 'hidden') {
+            pollTimer = null;
+            setPollStatus('Paused while this tab is in the background');
+            return;
+        }
+        pollTimer = setTimeout(updateStatus, ms);
+    }
+
+    function updateStatus() {
+        pollTimer = null;
+        if (finished || inFlight) return;
+        if (document.visibilityState === 'hidden') {
+            schedule(0);
+            return;
+        }
+        inFlight = true;
+        setPollStatus('Checking...');
+
+        fetch('/ajax/upload/status/' + encodeURIComponent(jobId), { cache: 'no-store', headers: { 'Accept': 'application/json' } })
+            .then(function (response) {
+                if (response.status === 404 || response.status === 403 || response.status === 401) {
+                    var fatal = new Error(response.status === 404 ? 'This upload job no longer exists.' : 'You do not have access to this upload, or your session has expired.');
+                    fatal.fatal = true;
+                    throw fatal;
+                }
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                return response.json();
+            })
+            .then(function (data) {
+                inFlight = false;
+                errorCount = 0;
+                el('connectionNotice').hidden = true;
+                el('timestamp').textContent = new Date().toLocaleTimeString();
+                el('lastUpdate').hidden = false;
+
+                var progress = Number(data.progress) || 0;
+                render(data.status, progress, data.errorMessage);
+
+                if (data.status === 'completed') {
+                    finish();
+                    if (data.comicId && data.comicFolderId) {
+                        showDoneActions(data.comicFolderId, data.comicId, sawActiveState);
+                    }
+                    return;
+                }
+                if (data.status === 'failed') {
+                    finish();
+                    return;
+                }
+
+                // Back off while nothing changes; snap back when progress moves
+                if (data.status !== currentStatus || progress !== lastProgress) {
+                    delay = MIN_DELAY;
+                } else {
+                    delay = Math.min(Math.round(delay * 1.5), MAX_DELAY);
+                }
+                currentStatus = data.status;
+                lastProgress = progress;
+                setPollStatus('Checking for updates automatically');
+                schedule(delay);
+            })
+            .catch(function (error) {
+                inFlight = false;
+                console.error('Error checking status:', error);
+                if (error.fatal) {
+                    finish();
+                    el('connectionNotice').textContent = error.message;
+                    el('connectionNotice').hidden = false;
+                    setPollStatus('Stopped');
+                    return;
+                }
+                errorCount++;
+                var retryIn = Math.min(5000 * Math.pow(2, errorCount - 1), MAX_ERROR_DELAY);
+                el('connectionNotice').textContent = 'We could not reach the server. Trying again in ' + Math.round(retryIn / 1000) + ' seconds. Processing continues in the background.';
+                el('connectionNotice').hidden = false;
+                setPollStatus('Connection problem');
+                schedule(retryIn);
+            });
+    }
+
+    function onVisibilityChange() {
+        if (finished) return;
+        if (document.visibilityState === 'visible') {
+            delay = MIN_DELAY;
+            setPollStatus('Checking for updates automatically');
+            if (!inFlight) schedule(0);
+        } else if (pollTimer) {
+            clearTimeout(pollTimer);
+            pollTimer = null;
+            setPollStatus('Paused while this tab is in the background');
+        }
+    }
+
+    // ---------- initialise ----------
+    render(currentStatus, lastProgress, null);
+    quiet = false;
+
+    if (currentStatus === 'completed') {
+        finished = true;
+        if (statusContainer.dataset.comicId && statusContainer.dataset.comicFolderId) {
+            showDoneActions(statusContainer.dataset.comicFolderId, statusContainer.dataset.comicId, false);
+        }
+    } else if (currentStatus === 'failed') {
+        finished = true;
+    } else {
+        document.addEventListener('visibilitychange', onVisibilityChange);
+        schedule(1000);
+    }
+})();
 </script>
 
-<%-include("footer")%> 
+<%-include("footer")%>

@@ -5,12 +5,11 @@ const bcrypt = require("bcrypt")
 
 // check if is loged in user
 router.use((req,res,next)=>{
-    if(req.session.userdata != null){
+    if(req.session.userData != null){
         res.redirect("/comic");
-        req.session.msg = ""
-    }else{
-        next();
+        return;
     }
+    next();
 })
 
 router.get("/",(req,res)=>{
@@ -29,9 +28,9 @@ router.post("/",CheckerBody,(req,res)=>{
        email:   req.body.email,
        password: bcrypt.hashSync(req.body.password,10)
    }).then((data)=>{
-        req.session.userData = data;
-        res.redirect("/comic");
+        req.session.userData = { id: data.id, username: data.username, email: data.email };
         req.session.msg = "";
+        res.redirect("/comic");
    })
 })
 

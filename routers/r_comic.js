@@ -1,10 +1,12 @@
 const router = require('express').Router();
-const {addComicPages, deleteComicPage, PostComicUpload ,UpdateComicDetails ,showcomic_id,showgallery_comic, checkIfisOnline, getUpdateComicDetails, getComicAiMetadata, getUploadStatus, getUploadStatusAPI, moveComicPage, PostChunkedUpload} = require('../controller/c_comic')
+const {addComicPages, deleteComicPage, PostComicUpload ,UpdateComicDetails ,showcomic_id,showgallery_comic,serveComicCover, checkIfisOnline, getUpdateComicDetails, getComicAiMetadata, getUploadStatus, getUploadStatusAPI, moveComicPage, PostChunkedUpload} = require('../controller/c_comic')
 
 //Show gallery
 router.get("/",showgallery_comic)
 //Show comic Page
 router.get("/show/:id",showcomic_id)
+// Cover thumbnail (must stay above the /:folderID/:id_db routes)
+router.get("/cover/:id",serveComicCover)
 
 router.get("/upload",checkIfisOnline,(req,res)=>{
     var msg = req.session.msg;

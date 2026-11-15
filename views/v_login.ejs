@@ -1,22 +1,36 @@
 <%- include("header") %>
-<div class="container content_c d-flex mt-5 justify-content-center">
-    <div>
-        <div class="row">
-            <% if(typeof msg != 'undefined' && msg != ""){ %>
-                <div class="alert alert-warning"><%=msg%></div>
-            <% } %>
-        </div>
-        <div class="row">
-        <div class="col-12 d-flex justify-content-center">
-            <form method="post" >
-                <h1 class="h3 mb-3 font-weight-normal" style="text-align: center"> Sign in</h1>
-                <input name="username" style="height: 30px;margin-bottom: 10px;" type="text"  class="form-control" placeholder="Username or Email" required="" autofocus="">
-                <input name="password" style="height: 30px;margin-bottom: 10px;" type="password" class="form-control" placeholder="Password" required="">
-                
-                <button class="btn btn-success btn-block" type="submit"><i class="fas fa-sign-in-alt"></i> Sign in</button>
-            </form>
-        </div>
-    </div>
-</div>
+<%
+  var flash = '';
+  if (typeof msg !== 'undefined' && msg) {
+    flash = Array.isArray(msg) ? msg.join(' ') : String(msg);
+  }
+%>
+<div class="container cr-auth">
+  <div class="cr-card cr-auth-card">
+    <h1 class="cr-page-title">Log in</h1>
+    <p class="cr-page-sub">Welcome back. Pick up where you left off.</p>
+
+    <% if (flash) { %>
+      <div class="cr-alert" role="alert">
+        <i class="fas fa-exclamation-circle" aria-hidden="true"></i>
+        <div><%= flash %></div>
+      </div>
+    <% } %>
+
+    <form method="post">
+      <div class="mb-3">
+        <label for="loginUsername" class="form-label">Username or email</label>
+        <input id="loginUsername" name="username" type="text" class="form-control" autocomplete="username"
+          autocapitalize="none" spellcheck="false" required autofocus>
+      </div>
+      <div class="mb-4">
+        <label for="loginPassword" class="form-label">Password</label>
+        <input id="loginPassword" name="password" type="password" class="form-control" autocomplete="current-password" required>
+      </div>
+      <button class="btn cr-btn-accent w-100" type="submit"><i class="fas fa-sign-in-alt" aria-hidden="true"></i> Log in</button>
+    </form>
+
+    <p class="cr-auth-alt">New to ComicRoom? <a href="/register">Create an account</a></p>
+  </div>
 </div>
 <%- include("footer") %>

@@ -1,18 +1,19 @@
 const lastPage_table = require('../model/m_lastPage');
 const comic_table = require('../model/m_comic');
 const Op = require('sequelize').Op;
+const { keywordWhere, normalizeKeyword } = require('../utils/queryHelpers');
+
+const COMIC_CARD_ATTRIBUTES = ["id", "title", "author", "coverImage", "totalPages", "savedFolder"];
+const LAST_PAGE_ATTRIBUTES = ["id", "pageNumber", "comicId", "userId"];
+
 var getreadingList = (req, res) => {
-    var searchKeywords = req.query.keyword || "";
+    var searchKeywords = normalizeKeyword(req.query.keyword);
     lastPage_table.findAll({
+        attributes: LAST_PAGE_ATTRIBUTES,
         include: {
             model: comic_table,
-            where: {
-                [Op.or]: {
-                    title: { [Op.like]: '%' + searchKeywords + '%' },
-                    description: { [Op.like]: '%' + searchKeywords + '%' },
-                    author: { [Op.like]: '%' + searchKeywords + '%' }
-                }
-            }
+            attributes: COMIC_CARD_ATTRIBUTES,
+            where: searchKeywords ? keywordWhere(searchKeywords) : { title: { [Op.ne]: null } }
         },
         where: {
             userId: req.session.userData.id,
@@ -38,7 +39,8 @@ var getreadingList = (req, res) => {
             searchKeywords: searchKeywords
         });
     }).catch((err) => {
-        res.send(err);
+        console.error('Error loading reading list:', err.message);
+        res.status(500).send("Unable to load the reading list.");
     })
 
 

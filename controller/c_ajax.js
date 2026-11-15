@@ -1,51 +1,68 @@
 const lastPage_table = require('../model/m_lastPage');
 const comic_table = require("../model/m_comic");
 const Op = require('sequelize').Op
+const { keywordWhere, normalizeKeyword, parseOffset } = require('../utils/queryHelpers');
+const dbIndexes = require('../utils/dbIndexes');
+
+const PAGE_SIZE = 12;
+const COMIC_CARD_ATTRIBUTES = ["id", "title", "author", "coverImage", "totalPages", "savedFolder"];
+const LAST_PAGE_ATTRIBUTES = ["id", "pageNumber", "comicId", "userId"];
 
 async function updateOrCreate(req) {
-    var numerLastPages = req.params.pageNumber
-    var userId_input = req.session.userData.id;
-    var comic_input = req.params.comicId;
-    const foundItem = await lastPage_table.findOne({
-        where: {
-            comicId: comic_input,
-            userId: userId_input
-        }
-    });
-    if (!foundItem) {
-        await lastPage_table.create({
-            comicId: comic_input,
-            userId: userId_input,
-            pageNumber: numerLastPages
-        })
+    const pageNumber = Number.parseInt(req.params.pageNumber, 10);
+    const comicId = Number.parseInt(req.params.comicId, 10);
+    const userId = req.session.userData.id;
+    if (!Number.isInteger(pageNumber) || pageNumber < 0 || !Number.isInteger(comicId) || comicId < 1) {
+        return false;
+    }
+
+    // Single INSERT ... ON DUPLICATE KEY UPDATE when the (userId, comicId) unique index exists.
+    if (dbIndexes.hasLastPageUniqueIndex()) {
+        await lastPage_table.upsert({
+            comicId,
+            userId,
+            pageNumber
+        }, {
+            fields: ['pageNumber'],
+            returning: false
+        });
         return true;
     }
-    await lastPage_table.update({
-        pageNumber: numerLastPages
-    }, {
-        where: {
-            comicId: comic_input,
-            userId: userId_input
-        }
+
+    const [affected] = await lastPage_table.update({ pageNumber }, {
+        where: { comicId, userId }
     });
-    return true
+    if (affected === 0) {
+        const existing = await lastPage_table.findOne({
+            attributes: ['id'],
+            where: { comicId, userId }
+        });
+        if (!existing) {
+            await lastPage_table.create({ comicId, userId, pageNumber });
+        }
+    }
+    return true;
 }
 
 const updateLastPage = async (req, res) => {
-    if (typeof req.session.userData != 'undefined' && await updateOrCreate(req)) {
-        res.send("Updated");
-    } else {
-        res.send("NotUpdated");
+    try {
+        if (typeof req.session.userData != 'undefined' && await updateOrCreate(req)) {
+            res.send("Updated");
+        } else {
+            res.send("NotUpdated");
+        }
+    } catch (err) {
+        console.error('Error updating last page:', err.message);
+        res.status(500).send("NotUpdated");
     }
 }
 
 
 const fetchComic = (req, res) => {
-
-    var offset_parma = req.params.offset;
-    var searchKeywords = req.query.keyword || "";
-    comic_table.findAndCountAll({
-        attributes: ["id", "title", "coverImage", "description", "totalPages", "savedFolder"],
+    const offset = parseOffset(req.params.offset);
+    const searchKeywords = normalizeKeyword(req.query.keyword);
+    comic_table.findAll({
+        attributes: COMIC_CARD_ATTRIBUTES,
         where: {
             [Op.not]: {
                 [Op.or]: {
@@ -53,63 +70,52 @@ const fetchComic = (req, res) => {
                     coverImage: ""
                 }
             },
-            [Op.or]:{
-                title: {[Op.like]: '%'+searchKeywords+'%'},
-                description:{[Op.like]: '%'+searchKeywords+'%'},
-                author:{[Op.like]: '%'+searchKeywords+'%'},
-            },
-
+            ...keywordWhere(searchKeywords)
         },
         order: [
             ['id', 'DESC'],
         ],
-        offset: parseInt(offset_parma),
-        limit: 12
-    }).then((data) => {
-        if (data.rows.length != 0) {
-            res.send(data.rows);
-            return;
-        }
-        res.send([]);
-
+        offset,
+        limit: PAGE_SIZE
+    }).then((rows) => {
+        res.send(rows);
     }).catch((err) => {
-        res.send(err);
+        console.error('Error fetching comics:', err.message);
+        res.status(500).json({ error: "Unable to load comics" });
     })
 
 }
-const fetchReadingList = (req,res)=>{
-//////////
-var offset_parma = req.params.offset;
-var searchKeywords = req.query.keyword || "";
-console.log(offset_parma,searchKeywords)
-lastPage_table.findAndCountAll({
-    include: {
-        model:comic_table,
-        where:{
-             [Op.or]:{
-                title: {[Op.like]: '%'+searchKeywords+'%'},
-                description:{[Op.like]: '%'+searchKeywords+'%'},
-                author:{[Op.like]: '%'+searchKeywords+'%'}
-             }
-        }
-    },
-    where:{
-        userId: req.session.userData.id,
-        pageNumber:{
-            [Op.gt]:1
-        }
-    },
-    offset: parseInt(offset_parma),
-    limit: 12
- }).then((data)=>{
-    if (data.rows.length != 0) {
-        res.send(data.rows);
+
+const fetchReadingList = (req, res) => {
+    if (!req.session.userData) {
+        res.status(401).json({ error: "Not authenticated" });
         return;
     }
-    res.send([]);
-}).catch((err)=>{
-    res.send(err);
-})
+    const offset = parseOffset(req.params.offset);
+    const searchKeywords = normalizeKeyword(req.query.keyword);
+    lastPage_table.findAll({
+        attributes: LAST_PAGE_ATTRIBUTES,
+        include: {
+            model: comic_table,
+            attributes: COMIC_CARD_ATTRIBUTES,
+            where: searchKeywords ? keywordWhere(searchKeywords) : { title: { [Op.ne]: null } }
+        },
+        where: {
+            userId: req.session.userData.id,
+            pageNumber: {
+                [Op.gt]: 1
+            }
+        },
+        // same ordering as the first page rendered by c_readinglist.js
+        order: [['id', 'DESC']],
+        offset,
+        limit: PAGE_SIZE
+    }).then((rows) => {
+        res.send(rows);
+    }).catch((err) => {
+        console.error('Error fetching reading list:', err.message);
+        res.status(500).json({ error: "Unable to load reading list" });
+    })
 
 }
 

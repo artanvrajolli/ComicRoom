@@ -1,77 +1,195 @@
 const path = require('path');
-const { createCanvas, loadImage } = require('@napi-rs/canvas');
 const { getAiSettings } = require('../config/ai');
 
 const MAX_ANALYZED_PAGES = 5;
 const MAX_IMAGE_DIMENSION = 1200;
+const MAX_DESCRIPTION_LENGTH = 5000;
 const REQUEST_TIMEOUT_MS = 60000;
 const METADATA_PROMPT = [
     'You identify comic book metadata from the first pages of a scanned comic.',
     'The images usually include the cover, title page, and credits.',
     'Return ONLY a JSON object with exactly these keys:',
-    '{"title": "...", "author": "..."}',
+    '{"title": "...", "author": "...", "description": "..."}',
+    'Every key is optional: when a value is not clearly visible, use an empty string "".',
+    'Never use placeholders such as "Unknown", "N/A", "None", "Untitled" or "Not visible".',
     'Rules:',
-    '- "title": the comic title as printed, including the series name and issue number when clearly shown. Keep it concise and do not include publisher names or release/scan tags.',
-    '- "author": the writer or creator shown in the credits. Prefer the writer. Use an empty string when no author is visible.',
-    '- Do not guess. If the title is not legible, use an empty string for it.'
+    '- "title": the comic title as printed, including the series name and issue number when clearly shown. Keep it concise and do not include publisher names, file names or release/scan tags.',
+    '- "author": the writer or creator shown in the credits, without labels like "Written by". Prefer the writer; for several writers join the names with ", ".',
+    '- "description": a short spoiler-free synopsis in 2-4 sentences, based only on the cover, title page, or a synopsis printed on these pages. Do not invent plot details.',
+    '- Do not guess. It is fine for all three values to be empty.'
 ].join('\n');
 
-function normalizeMetadataValue(value, maxLength) {
-    return String(value === null || value === undefined ? '' : value)
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, maxLength);
+const FIELD_ALIASES = {
+    title: ['title', 'name', 'comic_title', 'comicTitle', 'series'],
+    author: ['author', 'authors', 'writer', 'writers', 'creator', 'creators', 'artist'],
+    description: ['description', 'synopsis', 'summary', 'blurb', 'plot']
+};
+
+// Values the model sometimes returns instead of an empty string.
+const PLACEHOLDER_PATTERN = /^(n\/?a|na|none|null|nil|undefined|unknown|unk|untitled|unavailable|tbd|tba|empty|not applicable|no data|-+|\?+|\.+|_+)$/i;
+const NOT_FOUND_PATTERN = /^(the )?(title|author|writer|creator|description|synopsis|summary|value|name|credits?)?\s*(is |are )?(not|no|none)\b.*\b(visible|available|legible|shown|found|provided|specified|clear|present|readable|listed|given|identified|determined|known)\b/i;
+const NO_FIELD_PATTERN = /^(there is |there are )?no (title|author|writer|creator|credits?|description|synopsis|summary|plot)\b/i;
+
+function isPlaceholder(value) {
+    const bare = value.replace(/^["'`“”‘’\s]+|["'`“”‘’\s.!]+$/g, '');
+    if (!bare) return true;
+    if (PLACEHOLDER_PATTERN.test(bare)) return true;
+    // Only treat sentence-like "not found" phrases as empty when they are short.
+    return bare.length <= 120 && (NOT_FOUND_PATTERN.test(bare) || NO_FIELD_PATTERN.test(bare));
 }
 
+// Turns whatever the model sent for a field into a plain string.
+function coerceToText(value) {
+    if (value === null || value === undefined || typeof value === 'boolean') return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number') return String(value);
+    if (Array.isArray(value)) {
+        const parts = value.map(coerceToText).map(v => v.trim()).filter(v => v && !isPlaceholder(v));
+        return Array.from(new Set(parts)).join(', ');
+    }
+    if (typeof value === 'object') {
+        return coerceToText(value.name || value.value || value.text || '');
+    }
+    return '';
+}
+
+function pickField(source, field) {
+    for (const key of FIELD_ALIASES[field]) {
+        if (Object.prototype.hasOwnProperty.call(source, key)) {
+            const text = coerceToText(source[key]);
+            if (text.trim()) return text;
+        }
+    }
+    return '';
+}
+
+function normalizeMetadataValue(value, maxLength) {
+    const text = String(value === null || value === undefined ? '' : value)
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/^["'`“”‘’]+|["'`“”‘’]+$/g, '')
+        .trim();
+    return isPlaceholder(text) ? '' : text.slice(0, maxLength);
+}
+
+function normalizeTitleValue(value) {
+    const text = normalizeMetadataValue(value, 1000)
+        .replace(/\.(cbz|cbr|zip|rar|pdf)$/i, '')
+        .replace(/\s*[\(\[](digital|webrip|scan|c2c|zone-empire|empire)[^\)\]]*[\)\]]/gi, '')
+        .replace(/^["'`“”‘’]+|["'`“”‘’]+$/g, '')
+        .trim();
+    return isPlaceholder(text) ? '' : text;
+}
+
+function normalizeAuthorValue(value) {
+    const text = normalizeMetadataValue(value, 1000)
+        .replace(/^(written by|story by|script by|writer|writers|author|authors|creator|created by|by)\s*[:\-]?\s+/i, '')
+        .replace(/\s*,\s*/g, ', ')
+        .replace(/[,;\s]+$/, '')
+        .trim();
+    return isPlaceholder(text) ? '' : text;
+}
+
+function normalizeDescriptionValue(value, maxLength) {
+    const text = String(value === null || value === undefined ? '' : value)
+        .replace(/\r\n?/g, '\n')
+        .replace(/[^\S\n]+/g, ' ')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+    return isPlaceholder(text) ? '' : text.slice(0, maxLength);
+}
+
+// Accepts {..}, [{..}], or {"metadata": {..}}-style wrappers.
+function unwrapMetadataObject(parsed) {
+    if (Array.isArray(parsed)) {
+        parsed = parsed.find(item => item && typeof item === 'object');
+    }
+    if (!parsed || typeof parsed !== 'object') return null;
+    const hasKnownKey = obj => Object.keys(FIELD_ALIASES).some(f => FIELD_ALIASES[f].some(k => Object.prototype.hasOwnProperty.call(obj, k)));
+    if (hasKnownKey(parsed)) return parsed;
+    for (const value of Object.values(parsed)) {
+        if (value && typeof value === 'object' && !Array.isArray(value) && hasKnownKey(value)) return value;
+    }
+    return parsed;
+}
+
+// Last resort for truncated or slightly malformed JSON: read each "key": "value" pair.
+function salvageFields(text) {
+    const result = {};
+    let matched = false;
+    for (const field of Object.keys(FIELD_ALIASES)) {
+        for (const key of FIELD_ALIASES[field]) {
+            const re = new RegExp('"' + key + '"\\s*:\\s*(null|"((?:[^"\\\\]|\\\\.)*)("|$))', 'i');
+            const m = text.match(re);
+            if (m) {
+                matched = true;
+                if (m[1] !== 'null') {
+                    let value;
+                    try { value = JSON.parse('"' + m[2] + '"'); } catch (e) { value = m[2]; }
+                    if (m[3] !== '"') {
+                        // Cut off mid-value (reply truncated): keep complete sentences only.
+                        const lastStop = Math.max(value.lastIndexOf('. '), value.lastIndexOf('! '), value.lastIndexOf('? '));
+                        value = field === 'description' ? (lastStop > 0 ? value.slice(0, lastStop + 1) : '') : value;
+                    }
+                    result[field] = value;
+                }
+                break;
+            }
+        }
+    }
+    return matched ? result : null;
+}
+
+// Returns { title, author, description, found, missing } (values may be empty)
+// or null when the reply contains no recognisable metadata object at all.
 function parseMetadataContent(content) {
     if (typeof content !== 'string') {
         return null;
     }
 
-    const cleaned = content.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+    const cleaned = content
+        .replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, '')
+        .trim()
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```$/, '')
+        .trim();
     let parsed = null;
 
     try {
         parsed = JSON.parse(cleaned);
     } catch (error) {
         const match = cleaned.match(/\{[\s\S]*\}/);
-        if (!match) {
-            return null;
+        if (match) {
+            try { parsed = JSON.parse(match[0]); } catch (nestedError) { parsed = null; }
         }
-        try {
-            parsed = JSON.parse(match[0]);
-        } catch (nestedError) {
-            return null;
+        if (!parsed) {
+            parsed = salvageFields(cleaned);
         }
     }
 
-    if (!parsed || typeof parsed !== 'object') {
+    const source = unwrapMetadataObject(parsed);
+    if (!source) {
         return null;
     }
 
-    const title = normalizeMetadataValue(parsed.title, 1000);
-    const author = normalizeMetadataValue(parsed.author, 1000);
-    if (!title && !author) {
-        return null;
+    const title = normalizeTitleValue(pickField(source, 'title'));
+    const author = normalizeAuthorValue(pickField(source, 'author'));
+    let description = normalizeDescriptionValue(pickField(source, 'description'), MAX_DESCRIPTION_LENGTH);
+    if (description && title && description.toLowerCase() === title.toLowerCase()) {
+        description = '';
     }
 
-    return { title, author };
+    const values = { title, author, description };
+    const found = Object.keys(values).filter(key => values[key]);
+    const missing = Object.keys(values).filter(key => !values[key]);
+    return { title, author, description, found, missing };
 }
 
 async function encodePageAsDataUrl(filePath) {
-    const image = await loadImage(filePath);
-    const longestSide = Math.max(image.width, image.height);
-    const scale = longestSide > MAX_IMAGE_DIMENSION ? MAX_IMAGE_DIMENSION / longestSide : 1;
-    const width = Math.max(1, Math.round(image.width * scale));
-    const height = Math.max(1, Math.round(image.height * scale));
-    const canvas = createCanvas(width, height);
-    const context = canvas.getContext('2d');
-
-    context.fillStyle = '#ffffff';
-    context.fillRect(0, 0, width, height);
-    context.drawImage(image, 0, 0, width, height);
-
-    return 'data:image/jpeg;base64,' + canvas.toBuffer('image/jpeg', 0.82).toString('base64');
+    // Rendered in the isolated image worker: Skia has segfaulted in-process.
+    const { renderImage } = require('./thumbnails');
+    const buffer = await renderImage({ src: filePath, maxSide: MAX_IMAGE_DIMENSION, format: 'jpeg', quality: 82, background: '#ffffff' });
+    return 'data:image/jpeg;base64,' + buffer.toString('base64');
 }
 
 function buildRequest(settings, text, images, maxTokens) {
@@ -222,13 +340,17 @@ async function detectComicMetadata(savedFolder, pageImages) {
         return null;
     }
 
-    const result = await requestAi(settings, METADATA_PROMPT, imageParts, 500);
+    const result = await requestAi(settings, METADATA_PROMPT, imageParts, 900);
     if (!result.ok) {
         console.error('AI metadata request failed: ' + result.error);
         return null;
     }
 
-    return parseMetadataContent(result.text);
+    const metadata = parseMetadataContent(result.text);
+    if (!metadata) {
+        console.error('AI metadata: reply had no usable JSON: ' + String(result.text || '').slice(0, 200));
+    }
+    return metadata;
 }
 
 async function testAiConnection() {
@@ -249,4 +371,4 @@ async function testAiConnection() {
     };
 }
 
-module.exports = { detectComicMetadata, testAiConnection };
+module.exports = { detectComicMetadata, testAiConnection, parseMetadataContent };

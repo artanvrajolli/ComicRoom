@@ -1,278 +1,176 @@
-<!DOCTYPE html>
-<html lang="en">
+<%
+    var rdTitle = comic_Field.title || comicTitle || 'Untitled comic';
+    var rdAuthor = comic_Field.author ? String(comic_Field.author).trim() : '';
+    var rdDescription = comic_Field.description ? String(comic_Field.description).trim() : '';
+    var rdTotal = comicImages.length;
+    var rdEditUrl = '/comic/' + encodeURIComponent(comic_Field.savedFolder) + '/' + comic_Field.id;
+    var rdNext = (locals.nextComic && locals.nextComic.id) ? locals.nextComic : null;
+%><!DOCTYPE html>
+<html lang="en" class="rd-root rd-paged">
 <head>
     <%-include("head_tags")%>
-    <title>ComicRoom - <%=comic_Field.title%></title>
-    <style>
-        html, body {
-            min-height: 100%;
-            background-color: #111;
-        }
-
-        .reader-overlay {
-            position: fixed;
-            z-index: 5;
-        }
-
-        .reader-toolbar {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
-            padding: 6px 10px;
-            border-radius: 10px;
-            background-color: rgba(36, 36, 36, 0.55);
-        }
-
-        .reader-mode-button {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            min-width: 84px;
-            padding: 6px 10px;
-            border: 1px solid rgba(255,255,255,0.18);
-            border-radius: 999px;
-            color: #d3d3d3;
-            background-color: rgba(255,255,255,0.05);
-            font-size: 13px;
-            text-decoration: none;
-            cursor: pointer;
-        }
-
-        .reader-mode-button.active {
-            color: #111;
-            background-color: #f8f9fa;
-            border-color: #f8f9fa;
-        }
-
-        .paged-reader-shell {
-            height: 100vh;
-            height: 100dvh;
-            width: 100%;
-            padding: 0;
-            position: relative;
-            overflow: hidden;
-            touch-action: none;
-            user-select: none;
-            -webkit-user-select: none;
-        }
-
-        #mainImage {
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-            object-position: center;
-            image-rendering: auto;
-            transform-origin: center center;
-            will-change: transform;
-        }
-
-        .paged-reader-shell.is-zoomed #mainImage {
-            cursor: grab;
-        }
-
-        .paged-reader-shell.is-panning #mainImage {
-            cursor: grabbing;
-        }
-
-        .reader-side-trigger {
-            position: absolute;
-            top: 0;
-            bottom: 0;
-            width: 50%;
-            z-index: 3;
-            display: flex;
-            align-items: center;
-            cursor: pointer;
-            transition: background-color 0.15s ease-in-out;
-        }
-
-        .reader-side-trigger i {
-            font-size: 40px;
-            color: rgba(255, 255, 255, 0.45);
-        }
-
-        #leftTrigger {
-            left: 0;
-            justify-content: flex-start;
-            padding-left: 12px;
-        }
-
-        #rightTrigger {
-            right: 0;
-            justify-content: flex-end;
-            padding-right: 12px;
-        }
-
-        .reader-side-trigger:hover {
-            background-color: rgba(255,255,255,0.03);
-        }
-
-        #scrollReader {
-            display: none;
-            width: 100%;
-            padding: 72px 0 24px 0;
-        }
-
-        .scroll-page {
-            width: 100%;
-            max-width: 100%;
-            margin: 0 0 18px 0;
-            display: flex;
-            justify-content: center;
-        }
-
-        .scroll-page img {
-            width: 100%;
-            max-width: 100%;
-            height: auto;
-            max-height: 100vh;
-            max-height: 100dvh;
-            object-fit: contain;
-            display: block;
-            background-color: #111;
-        }
-
-        @media (hover: none) and (pointer: coarse) {
-            .reader-side-trigger {
-                width: 25%;
-            }
-        }
-
-        @media (max-width: 768px) {
-            .reader-overlay {
-                font-size: 18px !important;
-                opacity: 0.55 !important;
-            }
-
-            .reader-overlay b {
-                font-size: 15px !important;
-                margin-right: 5px !important;
-            }
-
-            .reader-toolbar {
-                gap: 4px;
-                padding: 3px 6px;
-                border-radius: 8px;
-                max-width: calc(100vw - 72px);
-            }
-
-            .reader-mode-button {
-                min-width: 50px;
-                padding: 3px 7px;
-                font-size: 11px;
-            }
-
-            .reader-toolbar a:not(.reader-mode-button) {
-                font-size: 20px !important;
-            }
-
-            .reader-toolbar .mx-1,
-            .reader-toolbar .mx-2 {
-                margin-left: 4px !important;
-                margin-right: 4px !important;
-            }
-
-            .reader-side-trigger i {
-                font-size: 28px;
-            }
-
-            #leftTrigger {
-                padding-left: 8px;
-            }
-
-            #rightTrigger {
-                padding-right: 8px;
-            }
-
-            #scrollReader {
-                padding: 52px 0 12px 0;
-            }
-
-            .scroll-page {
-                margin-bottom: 8px;
-            }
-        }
-    </style>
+    <link rel="stylesheet" href="/public/css/reader.css?v=20261115r1">
+    <title>ComicRoom - <%= rdTitle %></title>
 </head>
-    <body class="h-100 text-white bg-dark" data-comic-images="<%- encodeURIComponent(JSON.stringify(comicImages)) %>" data-comic-id="<%=comic_Field.id%>" data-comic-folder="<%-savedFolder%>" data-page-number="<%=pageNumber%>">
-        <div class="reader-overlay d-flex" style="font-size:30px;opacity: 0.65;left:4px;top:4px;">
-            <b style="font-size: 25px;margin-right: 10px;">
-                <a id="currentPage">999</a>/<a id="totalPage">999</a>
-            </b>
+<body class="reader-body is-paged"
+      data-comic-images="<%- encodeURIComponent(JSON.stringify(comicImages)) %>"
+      data-comic-id="<%= comic_Field.id %>"
+      data-comic-folder="<%= savedFolder %>"
+      data-page-number="<%= pageNumber %>"
+      data-signed-in="<%= locals.userData ? '1' : '0' %>">
+
+    <header id="readerTopbar" class="rd-bar rd-topbar" aria-label="Reader toolbar">
+        <a id="backToComics" class="rd-btn" href="/comic" aria-label="Back to gallery" title="Back to gallery">
+            <i class="fas fa-arrow-left" aria-hidden="true"></i>
+        </a>
+        <div class="rd-title">
+            <h1 class="rd-title-main" title="<%= rdTitle %>"><%= rdTitle %></h1>
+            <% if (rdAuthor) { %><span class="rd-title-sub"><%= rdAuthor %></span><% } %>
         </div>
-        <div class="reader-overlay d-flex" style="font-size:30px;right:5px;top:4px;">
-            <div class="reader-toolbar">
-                <a id="pagedModeButton" class="reader-mode-button active">Paged</a>
-                <a id="scrollModeButton" class="reader-mode-button">Scroll</a>
-            <a id="zoomToggle" style="font-size: 30px;cursor: pointer;color: rgb(134 134 134 / 0.7);" title="Zoom page" aria-label="Zoom page">
-                <i class="mx-2 fas fa-search-plus"></i>
-            </a>
-            <a id="offlineToggle" style="font-size: 30px;cursor: pointer;color: rgb(134 134 134 / 0.7);" title="Save comic for offline reading" aria-label="Save comic for offline reading">
-                <i class="mx-2 fas fa-cloud-download-alt"></i>
-            </a>
-            <a id="backToStart" style="font-size: 30px;cursor: pointer;display: none;">
-                <i class="mx-2 fas fa-undo-alt"></i>
-            </a>
-            <% if(canEditComic){ %>
-            <a href="/comic/<%= comic_Field.savedFolder %>/<%= comic_Field.id %>" style="font-size: 30px;cursor: pointer;color: rgb(134 134 134 / 0.7);">
-                <i class="mx-2 fas fa-edit"></i>
+        <div class="rd-actions" role="toolbar" aria-label="Reader options">
+            <button id="modeToggle" class="rd-btn" type="button" aria-label="Switch to vertical scroll mode" title="Reading mode (M)">
+                <i class="fas fa-book-open" aria-hidden="true"></i>
+            </button>
+            <button id="fitToggle" class="rd-btn" type="button" aria-label="Page fit: fit screen" title="Page fit (W)">
+                <i class="fas fa-compress-arrows-alt" aria-hidden="true"></i>
+            </button>
+            <button id="zoomToggle" class="rd-btn rd-hide-sm" type="button" aria-label="Zoom in" aria-pressed="false" title="Zoom (+ / - / 0)">
+                <i class="fas fa-search-plus" aria-hidden="true"></i>
+            </button>
+            <button id="offlineToggle" class="rd-btn rd-offline" type="button" aria-label="Save comic for offline reading" title="Save comic for offline reading">
+                <i class="fas fa-cloud-download-alt" aria-hidden="true"></i>
+            </button>
+            <% if (canEditComic) { %>
+            <a class="rd-btn rd-hide-sm" href="<%= rdEditUrl %>" aria-label="Edit comic details" title="Edit comic details">
+                <i class="fas fa-edit" aria-hidden="true"></i>
             </a>
             <% } %>
-            <a id="fullScreen_icon" style="font-size: 30px;cursor: pointer;color: rgb(134 134 134 / 0.7);">
-                <i class="mx-2 fas fa-expand"></i>
-            </a>
-            <a id="infoComic_details" style="font-size: 30px;cursor: pointer;color: rgb(134 134 134 / 0.7);">
-                <i class="mx-1 fas fa-info-circle"></i>
-             </a>
+            <button id="fullScreen_icon" class="rd-btn" type="button" aria-label="Enter fullscreen" title="Fullscreen (F)">
+                <i class="fas fa-expand" aria-hidden="true"></i>
+            </button>
+            <button id="infoToggle" class="rd-btn" type="button" aria-label="Comic details and settings" aria-controls="readerInfo" aria-expanded="false" title="Details and settings (I)">
+                <i class="fas fa-info-circle" aria-hidden="true"></i>
+            </button>
+        </div>
+    </header>
 
-            <a id="backToComics" style="font-size: 30px;cursor: pointer;color: rgb(134 134 134 / 0.7);">
-             <i class="mx-2 fas fa-times"></i>
-            </a>
+    <main id="pagedReader" class="rd-stage" data-fit="contain" aria-label="Comic page viewer">
+        <img id="mainImage" class="rd-page" alt="" fetchpriority="high" decoding="async" draggable="false">
+    </main>
+    <div class="rd-hint rd-hint-prev" id="hintPrev" aria-hidden="true"><i class="fas fa-chevron-left"></i></div>
+    <div class="rd-hint rd-hint-next" id="hintNext" aria-hidden="true"><i class="fas fa-chevron-right"></i></div>
+    <div id="pageLoading" class="rd-loading" hidden><span class="rd-spinner"></span><span class="visually-hidden">Loading page</span></div>
+    <div id="pageError" class="rd-error" role="alert" hidden>
+        <p>This page could not be loaded.</p>
+        <button id="pageRetry" class="rd-pill" type="button"><i class="fas fa-redo" aria-hidden="true"></i> Try again</button>
+    </div>
+
+    <div id="scrollReader" class="rd-scroll" data-fit="width" aria-label="Comic pages" hidden></div>
+
+    <footer id="readerBottombar" class="rd-bar rd-bottombar" aria-label="Page navigation">
+        <button id="prevPage" class="rd-btn" type="button" aria-label="Previous page" title="Previous page (Left arrow)">
+            <i class="fas fa-chevron-left" aria-hidden="true"></i>
+        </button>
+        <input id="pageSlider" class="rd-slider" type="range" min="1" max="<%= Math.max(rdTotal, 1) %>" step="1" value="1" aria-label="Page" <%= rdTotal <= 1 ? 'disabled' : '' %>>
+        <button id="nextPage" class="rd-btn" type="button" aria-label="Next page" title="Next page (Right arrow)">
+            <i class="fas fa-chevron-right" aria-hidden="true"></i>
+        </button>
+        <button id="pageIndicator" class="rd-indicator" type="button" aria-label="Go to page" aria-controls="jumpForm" aria-expanded="false" title="Go to page (G)">
+            <span id="currentPage">1</span> / <span id="totalPage"><%= rdTotal %></span>
+        </button>
+        <form id="jumpForm" class="rd-jump" hidden>
+            <label for="jumpInput">Go to page</label>
+            <input id="jumpInput" type="number" min="1" max="<%= Math.max(rdTotal, 1) %>" inputmode="numeric" required>
+            <button class="rd-pill rd-pill-accent" type="submit">Go</button>
+        </form>
+    </footer>
+
+    <div id="pageFlash" class="rd-flash" aria-hidden="true"></div>
+    <div id="readerToast" class="rd-toast" role="status" aria-live="polite"></div>
+    <div id="srStatus" class="visually-hidden" aria-live="polite"></div>
+
+    <section id="endCard" class="rd-endcard" role="dialog" aria-modal="true" aria-labelledby="endCardTitle" hidden>
+        <div class="rd-endcard-inner" id="endCardInner">
+            <p class="rd-eyebrow">End of comic</p>
+            <h2 id="endCardTitle"><%= rdTitle %></h2>
+            <p class="rd-muted">You have reached the last page (<%= rdTotal %> of <%= rdTotal %>).</p>
+            <div class="rd-endcard-actions">
+                <% if (rdNext) { %>
+                <a class="rd-pill rd-pill-accent" href="/comic/show/<%= rdNext.id %>">
+                    Next: <%= rdNext.title || 'next comic' %> <i class="fas fa-chevron-right" aria-hidden="true"></i>
+                </a>
+                <% } %>
+                <a class="rd-pill <%= rdNext ? '' : 'rd-pill-accent' %>" href="/comic"><i class="fas fa-th-large" aria-hidden="true"></i> Back to gallery</a>
+                <button class="rd-pill" type="button" data-reader-action="restart"><i class="fas fa-undo-alt" aria-hidden="true"></i> Start over</button>
+                <button class="rd-pill rd-pill-ghost" type="button" data-reader-action="close-end">Stay on this page</button>
             </div>
         </div>
+    </section>
 
-        <div id="pagedReader" class="container-fluid d-flex justify-content-center align-items-center paged-reader-shell">
-
-            <div class="reader-side-trigger" id="leftTrigger">
-                <i style="cursor: pointer;" class="fas fa-arrow-circle-left align-self-center"></i>
-            </div>
-            <!-- transform: scale3d(1, 1, 1); -->
-            <img onload="cacheNextImage()" class="img-fluid" id="mainImage" src="">
-
-            <img id="cachedImage" src="" style="height: 1px; width:1px;" />
-            <div class="reader-side-trigger" id="rightTrigger">
-                <i style="cursor: pointer;" class="fas fa-arrow-circle-right align-self-center"></i>
-            </div>
-
+    <div id="readerBackdrop" class="rd-backdrop" hidden></div>
+    <aside id="readerInfo" class="rd-drawer" aria-labelledby="readerInfoTitle" aria-hidden="true">
+        <div class="rd-drawer-head">
+            <h2 id="readerInfoTitle">Details &amp; settings</h2>
+            <button id="closeInfoComic" class="rd-btn" type="button" aria-label="Close panel">
+                <i class="fas fa-times" aria-hidden="true"></i>
+            </button>
         </div>
-        <div id="scrollReader" class="container-fluid">
-            <% comicImages.forEach((comicImage, index)=>{ %>
-                <div class="scroll-page" data-page-index="<%= index %>">
-                    <img class="scroll-page-image img-fluid" src="/public/uploads/<%= comic_Field.savedFolder %>/<%- comicImage.split('/').map(encodeURIComponent).join('/') %>" loading="lazy" decoding="async" fetchpriority="low" alt="Page <%= index + 1 %>">
+        <div class="rd-drawer-body">
+            <h3 class="rd-info-title"><%= rdTitle %></h3>
+            <dl class="rd-meta">
+                <dt>Author</dt>
+                <dd><%= rdAuthor || 'Unknown' %></dd>
+                <dt>Pages</dt>
+                <dd><%= rdTotal %></dd>
+            </dl>
+            <% if (rdDescription) { %>
+            <p class="rd-desc"><%= rdDescription %></p>
+            <% } else { %>
+            <p class="rd-muted">No description yet.</p>
+            <% } %>
+            <% if (canEditComic) { %>
+            <a class="rd-pill" href="<%= rdEditUrl %>"><i class="fas fa-edit" aria-hidden="true"></i> Edit details</a>
+            <% } %>
+
+            <h4 class="rd-section">Display</h4>
+            <div class="rd-field">
+                <span class="rd-label" id="modeLabel">Reading mode</span>
+                <div class="rd-seg" role="group" aria-labelledby="modeLabel">
+                    <button type="button" data-set-mode="paged" aria-pressed="true">Page by page</button>
+                    <button type="button" data-set-mode="scroll" aria-pressed="false">Vertical scroll</button>
                 </div>
-            <% }) %>
-        </div>
-        <div id="infoComic" class="d-flex">
-            <div class="px-3 align-self-center">
-                <b style="border-bottom: 1px solid white;color:white;"><%=comic_Field.title%></b>
-                <p >
-                    <%=comic_Field.description%>
-                </p>
-                <p class="justify-text" style="font-size: 12px;">
-                    Author:<br><% if(comic_Field.author != ""){ %>
-                                <%=comic_Field.author%>
-                                <% }else{ %>
-                                    Unknown
-                                <% }%>
-                </p>
             </div>
-            <div id="closeInfoComic" style="cursor: pointer;font-size: 25px;opacity: 0.5;">
-                <i class="mx-2 fas fa-times"></i>
+            <div class="rd-field">
+                <span class="rd-label" id="fitLabel">Page fit</span>
+                <div class="rd-seg" role="group" aria-labelledby="fitLabel">
+                    <button type="button" data-set-fit="contain" aria-pressed="true">Screen</button>
+                    <button type="button" data-set-fit="width" aria-pressed="false">Width</button>
+                    <button type="button" data-set-fit="height" aria-pressed="false">Height</button>
+                    <button type="button" data-set-fit="original" aria-pressed="false">Original</button>
+                </div>
             </div>
+
+            <h4 class="rd-section">Offline</h4>
+            <p id="offlineStatusText" class="rd-muted" style="margin:0;">Checking offline copy...</p>
+            <div id="offlineProgress" class="rd-progress" aria-hidden="true"><div id="offlineProgressBar" class="rd-progress-bar"></div></div>
+            <button id="offlineSaveButton" class="rd-pill" type="button"><i class="fas fa-cloud-download-alt" aria-hidden="true"></i> Save for offline</button>
+
+            <h4 class="rd-section">Keyboard shortcuts</h4>
+            <dl class="rd-keys">
+                <dt><kbd>&rarr;</kbd> <kbd>D</kbd> <kbd>Space</kbd></dt><dd>Next page</dd>
+                <dt><kbd>&larr;</kbd> <kbd>A</kbd> <kbd>Shift</kbd>+<kbd>Space</kbd></dt><dd>Previous page</dd>
+                <dt><kbd>Home</kbd> <kbd>End</kbd></dt><dd>First / last page</dd>
+                <dt><kbd>G</kbd></dt><dd>Go to page</dd>
+                <dt><kbd>F</kbd></dt><dd>Fullscreen</dd>
+                <dt><kbd>M</kbd></dt><dd>Paged / vertical scroll</dd>
+                <dt><kbd>W</kbd></dt><dd>Cycle page fit</dd>
+                <dt><kbd>+</kbd> <kbd>-</kbd> <kbd>0</kbd></dt><dd>Zoom in / out / reset</dd>
+                <dt><kbd>I</kbd></dt><dd>This panel</dd>
+                <dt><kbd>Esc</kbd></dt><dd>Close panel, reset zoom</dd>
+            </dl>
         </div>
-    </body>
-<script src="/public/script/viewComic.js?v=20261115c"></script>
+    </aside>
+
+    <script src="/public/script/viewComic.js?v=20261115r1"></script>
+</body>
 </html>

@@ -263,6 +263,7 @@ function ensurePdfCover(savedFolder, title) {
     const safeTitle = escapeXml(title || 'PDF Upload');
     const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900" viewBox="0 0 600 900"><rect width="600" height="900" rx="32" fill="#1f1f1f"/><rect x="48" y="48" width="504" height="804" rx="24" fill="#2d2d2d" stroke="#4b4b4b" stroke-width="4"/><rect x="120" y="120" width="360" height="140" rx="20" fill="#c92a2a"/><text x="300" y="205" text-anchor="middle" font-size="88" font-family="Arial, sans-serif" font-weight="700" fill="#ffffff">PDF</text><foreignObject x="90" y="320" width="420" height="420"><div xmlns="http://www.w3.org/1999/xhtml" style="display:flex;height:420px;align-items:center;justify-content:center;text-align:center;color:white;font-family:Arial,sans-serif;font-size:34px;font-weight:600;line-height:1.35;padding:0 12px;word-break:break-word;">${safeTitle}</div></foreignObject></svg>`;
     fs.writeFileSync(coverFilePath, svgContent, 'utf8');
+    invalidateComicAssets(savedFolder);
 
     return PDF_COVER_FILE_NAME;
 }
@@ -308,12 +309,23 @@ function removeEmptyDirectories(directoryPath, rootPath = directoryPath) {
 }
 
 function rebuildComicImagePages(savedFolder, pageEntries) {
+    try {
+        return rebuildComicImagePagesOnDisk(savedFolder, pageEntries);
+    } catch (error) {
+        // a half-rebuilt listing must never be served from cache
+        invalidateComicAssets(savedFolder);
+        throw error;
+    }
+}
+
+function rebuildComicImagePagesOnDisk(savedFolder, pageEntries) {
     const uploadFolderPath = getUploadFolderPath(savedFolder);
     if (!fs.existsSync(uploadFolderPath) || !fs.lstatSync(uploadFolderPath).isDirectory()) {
         throw new Error('Comic folder does not exist.');
     }
 
     const normalizedEntries = Array.isArray(pageEntries) ? pageEntries : [];
+    invalidateComicAssets(savedFolder);
     const tempDirectoryName = `${PAGE_MANAGER_TEMP_PREFIX}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const tempDirectoryPath = path.join(uploadFolderPath, tempDirectoryName);
     fs.mkdirSync(tempDirectoryPath, { recursive: true });
@@ -362,10 +374,59 @@ function rebuildComicImagePages(savedFolder, pageEntries) {
     fs.rmdirSync(tempDirectoryPath);
     removeEmptyDirectories(uploadFolderPath);
 
+    invalidateComicAssets(savedFolder);
     return resolveComicAssets(savedFolder);
 }
 
+// resolveComicAssets walks the comic folder with sync fs calls, which is slow on the
+// FUSE mount. Results are cached per folder; page-management writes invalidate it.
+const ASSET_CACHE_TTL_MS = 30 * 60 * 1000;
+const ASSET_CACHE_MAX_ENTRIES = 1000;
+const assetCache = new Map();
+
+function assetCacheKey(savedFolder) {
+    return path.normalize(String(savedFolder || ''));
+}
+
+function cloneAssets(assets) {
+    return { ...assets, images: assets.images.slice() };
+}
+
+function invalidateComicAssets(savedFolder) {
+    if (typeof savedFolder === 'undefined') {
+        assetCache.clear();
+        return;
+    }
+    const key = assetCacheKey(savedFolder);
+    for (const cachedKey of Array.from(assetCache.keys())) {
+        // a parent folder change also affects cached sub-folder entries and vice versa
+        if (cachedKey === key || cachedKey.startsWith(key + path.sep) || key.startsWith(cachedKey + path.sep)) {
+            assetCache.delete(cachedKey);
+        }
+    }
+}
+
 function resolveComicAssets(savedFolder) {
+    const key = assetCacheKey(savedFolder);
+    const cached = assetCache.get(key);
+    if (cached && Date.now() - cached.at < ASSET_CACHE_TTL_MS) {
+        return cloneAssets(cached.assets);
+    }
+
+    const assets = scanComicAssets(savedFolder);
+    if (assets.viewerType !== 'unknown') {
+        assetCache.delete(key);
+        assetCache.set(key, { at: Date.now(), assets: cloneAssets(assets) });
+        while (assetCache.size > ASSET_CACHE_MAX_ENTRIES) {
+            assetCache.delete(assetCache.keys().next().value);
+        }
+    } else {
+        assetCache.delete(key);
+    }
+    return assets;
+}
+
+function scanComicAssets(savedFolder) {
     const uploadFolderPath = getUploadFolderPath(savedFolder);
     if (!fs.existsSync(uploadFolderPath) || !fs.lstatSync(uploadFolderPath).isDirectory()) {
         return {
@@ -416,6 +477,7 @@ module.exports = {
     ensurePdfCover,
     extractMetadataFromFilename,
     getUploadFolderPath,
+    invalidateComicAssets,
     isSupportedComicImageFile,
     listComicPages,
     rebuildComicImagePages,

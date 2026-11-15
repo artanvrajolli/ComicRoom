@@ -22,10 +22,17 @@ const loginPost = (req,res)=>{
     }).then((data)=>{
 
     if(data && bcrypt.compareSync(password,data.password)){
-        req.session.userData = data;
-        req.session.msg = "";
-        req.session.save(()=>{
-            res.redirect("/comic");
+        const sessionUser = { id: data.id, username: data.username, email: data.email };
+        req.session.regenerate((regenerateError)=>{
+            if(regenerateError){
+                res.redirect("/login");
+                return;
+            }
+            req.session.userData = sessionUser;
+            req.session.msg = "";
+            req.session.save(()=>{
+                res.redirect("/comic");
+            });
         });
         return;
     }

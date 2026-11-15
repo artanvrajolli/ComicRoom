@@ -3,7 +3,8 @@ const path = require('path');
 const extractComics = require('./extractComic');
 const comic_table = require('../model/m_comic');
 const UploadJob = require('../model/m_uploadJob');
-const { extractMetadataFromFilename, getUploadFolderPath, resolveComicAssets, sanitizeUploadFileName } = require('./comicStorage');
+const { extractMetadataFromFilename, getUploadFolderPath, invalidateComicAssets, resolveComicAssets, sanitizeUploadFileName } = require('./comicStorage');
+const thumbnails = require('./thumbnails');
 const { detectComicMetadata } = require('./aiMetadata');
 
 class JobProcessor {
@@ -111,6 +112,7 @@ class JobProcessor {
             console.log(`Extracting comic for job ${job.jobId}...`);
             await extractComics(workingFilePath, job.extension, job.comicFolderId);
 
+            invalidateComicAssets(job.comicFolderId);
             let comicAssets = resolveComicAssets(job.comicFolderId);
 
             if (comicAssets.viewerType !== 'image' && comicAssets.viewerType !== 'pdf') {
@@ -126,6 +128,11 @@ class JobProcessor {
                 console.error('AI metadata detection failed:', error.message);
             }
 
+            if (aiMetadata) {
+                const found = Array.isArray(aiMetadata.found) ? aiMetadata.found : [];
+                console.log(`AI metadata for job ${job.id}: ${found.length ? 'found ' + found.join(', ') : 'nothing visible'}; using filename for anything missing`);
+            }
+
             await job.update({ progress: 95 });
 
             const comicData = await comic_table.create({
@@ -133,7 +140,7 @@ class JobProcessor {
                 uid: job.userId,
                 title: (aiMetadata && aiMetadata.title) || extractedMetadata.title,
                 author: (aiMetadata && aiMetadata.author) || extractedMetadata.author || '',
-                description: '',
+                description: (aiMetadata && aiMetadata.description) || '',
                 coverImage: comicAssets.coverImage,
                 totalPages: comicAssets.totalPages
             });
@@ -156,6 +163,7 @@ class JobProcessor {
             }
 
             console.log(`Job ${job.jobId} completed successfully`);
+            thumbnails.warmThumbnail(comicData);
 
         } catch (error) {
             console.error('Error processing job:', error);
@@ -188,18 +196,9 @@ class JobProcessor {
     }
 
     async getJobStatus(jobId) {
-        console.log(`JobProcessor: Getting status for job ${jobId}`);
-        const job = await UploadJob.findOne({
+        return UploadJob.findOne({
             where: { jobId: jobId }
         });
-        
-        if (job) {
-            console.log(`JobProcessor: Found job ${jobId} with status ${job.status}, progress ${job.progress}%`);
-        } else {
-            console.log(`JobProcessor: Job ${jobId} not found in database`);
-        }
-        
-        return job;
     }
 
     async cleanupStaleChunks() {

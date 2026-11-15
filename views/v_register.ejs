@@ -1,40 +1,77 @@
 <%- include("header") %>
-<div class="container content_c d-flex mt-5 justify-content-center">
-    <div>
-        <div class="row">
-            <% if(typeof msg != 'undefined' && msg != ""){ %>
-                <div class="alert alert-warning"><%=msg%></div>
-            <% } %>
-        </div>
-        <div class="row">
-        <div class="col-12 d-flex justify-content-center">
-            <form method="post"  action="/register">
-                <input style="height: 30px;margin-bottom: 10px;" class="form-control" name="username" value="<%=username%>" placeholder="Username" type="text">
-                <input style="height: 30px;margin-bottom: 10px;" class="form-control" name="email" value="<%=email%>" placeholder="Email" type="text">
-                <input id="original_password" style="height: 30px;margin-bottom: 10px;" class="form-control" name="password" value="" placeholder="Password" type="password">
-                <input id="confirm_password" style="height: 30px;margin-bottom: 10px;" class="form-control" value="" placeholder="Confirm Password" type="password">
-                <button id="signupButton" class="btn btn-warning">Sign up</button>
-            </form>
-        </div>
-    </div>
-</div>
+<%
+  var messages = [];
+  if (typeof msg !== 'undefined' && msg) {
+    messages = Array.isArray(msg) ? msg.filter(Boolean).map(String) : [String(msg)];
+  }
+  var usernameValue = typeof username !== 'undefined' && username ? username : '';
+  var emailValue = typeof email !== 'undefined' && email ? email : '';
+%>
+<div class="container cr-auth">
+  <div class="cr-card cr-auth-card">
+    <h1 class="cr-page-title">Create an account</h1>
+    <p class="cr-page-sub">Upload comics and keep track of what you are reading.</p>
+
+    <% if (messages.length) { %>
+      <div class="cr-alert" role="alert">
+        <i class="fas fa-exclamation-circle" aria-hidden="true"></i>
+        <% if (messages.length === 1) { %>
+          <div><%= messages[0] %></div>
+        <% } else { %>
+          <ul><% messages.forEach(function (m) { %><li><%= m %></li><% }) %></ul>
+        <% } %>
+      </div>
+    <% } %>
+
+    <form method="post" action="/register">
+      <div class="mb-3">
+        <label for="registerUsername" class="form-label">Username</label>
+        <input id="registerUsername" class="form-control" name="username" value="<%= usernameValue %>" type="text"
+          autocomplete="username" autocapitalize="none" spellcheck="false" pattern="[a-zA-Z0-9]+" required
+          aria-describedby="usernameHelp">
+        <div id="usernameHelp" class="form-text">Letters and numbers only.</div>
+      </div>
+      <div class="mb-3">
+        <label for="registerEmail" class="form-label">Email</label>
+        <input id="registerEmail" class="form-control" name="email" value="<%= emailValue %>" type="email"
+          autocomplete="email" autocapitalize="none" spellcheck="false" required>
+      </div>
+      <div class="mb-3">
+        <label for="original_password" class="form-label">Password</label>
+        <input id="original_password" class="form-control" name="password" value="" type="password"
+          autocomplete="new-password" minlength="6" required aria-describedby="passwordHelp">
+        <div id="passwordHelp" class="form-text">At least 6 characters.</div>
+      </div>
+      <div class="mb-4">
+        <label for="confirm_password" class="form-label">Confirm password</label>
+        <input id="confirm_password" class="form-control" value="" type="password" autocomplete="new-password"
+          required aria-describedby="confirmHelp">
+        <div id="confirmHelp" class="invalid-feedback">Passwords do not match.</div>
+      </div>
+      <button id="signupButton" type="submit" class="btn cr-btn-accent w-100"><i class="fas fa-user-plus" aria-hidden="true"></i> Sign up</button>
+    </form>
+
+    <p class="cr-auth-alt">Already have an account? <a href="/login">Log in</a></p>
+  </div>
 </div>
 <script>
+  (function () {
     var original_password = document.getElementById("original_password");
     var confirm_password = document.getElementById("confirm_password");
-    const checker_confirm = ()=>{
-        if(original_password.value == confirm_password.value){
-            confirm_password.style.border = "1px solid green";
-            signupButton.disabled = false;
-        }else{
-            confirm_password.style.border = "1px solid red";
-            signupButton.disabled = true;
-        }
-    }
-    confirm_password.addEventListener("keyup",checker_confirm);
-    original_password.addEventListener("keyup",checker_confirm);
+    var signupButton = document.getElementById("signupButton");
 
-
-
+    // Same behaviour as before: the button is only enabled while both passwords match.
+    var checker_confirm = function () {
+      var matches = original_password.value == confirm_password.value;
+      confirm_password.classList.toggle("is-valid", matches && confirm_password.value !== "");
+      confirm_password.classList.toggle("is-invalid", !matches);
+      confirm_password.setAttribute("aria-invalid", matches ? "false" : "true");
+      signupButton.disabled = !matches;
+    };
+    ["keyup", "input"].forEach(function (eventName) {
+      confirm_password.addEventListener(eventName, checker_confirm);
+      original_password.addEventListener(eventName, checker_confirm);
+    });
+  })();
 </script>
 <%- include("footer") %>

@@ -1,82 +1,104 @@
-<!DOCTYPE html>
-<html lang="en">
+<%
+    var rdTitle = comicTitle || comic_Field.title || 'Untitled comic';
+    var rdAuthor = comic_Field.author ? String(comic_Field.author).trim() : '';
+    var rdPdfUrl = '/public/uploads/' + encodeURIComponent(savedFolder) + '/' + String(pdfFile).split('/').map(encodeURIComponent).join('/');
+    var rdPdfName = String(pdfFile).split('/').pop();
+%><!DOCTYPE html>
+<html lang="en" class="rd-root">
 <head>
     <%-include("head_tags")%>
-    <title>ComicRoom - <%=comicTitle%></title>
-    <style>
-        html, body {
-            height: 100%;
-            margin: 0;
-            background-color: #111;
-            color: white;
-        }
-
-        .viewer-shell {
-            display: flex;
-            flex-direction: column;
-            height: 100%;
-        }
-
-        .viewer-toolbar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 16px;
-            padding: 12px 18px;
-            background-color: rgba(18, 18, 18, 0.95);
-            border-bottom: 1px solid #2f2f2f;
-            flex-wrap: wrap;
-        }
-
-        .viewer-toolbar a {
-            color: white;
-            text-decoration: none;
-            margin-right: 14px;
-        }
-
-        .viewer-toolbar a:last-child {
-            margin-right: 0;
-        }
-
-        .viewer-title {
-            font-size: 18px;
-            font-weight: 600;
-        }
-
-        .viewer-meta {
-            font-size: 13px;
-            opacity: 0.75;
-        }
-
-        .viewer-frame {
-            flex: 1;
-            width: 100%;
-            border: 0;
-            background-color: #1b1b1b;
-        }
-    </style>
+    <link rel="stylesheet" href="/public/css/reader.css?v=20261115r1">
+    <title>ComicRoom - <%= rdTitle %></title>
 </head>
-<body>
-    <div class="viewer-shell">
-        <div class="viewer-toolbar">
-            <div>
-                <a href="/comic"><i class="fas fa-arrow-left"></i> Gallery</a>
-                <% if(canEditComic){ %>
-                    <a href="/comic/<%=comic_Field.savedFolder%>/<%=comic_Field.id%>"><i class="fas fa-edit"></i> Edit Details</a>
+<body class="reader-body">
+    <div class="rd-pdf" id="pdfShell">
+        <header class="rd-bar rd-topbar" aria-label="PDF toolbar">
+            <a class="rd-btn" href="/comic" aria-label="Back to gallery" title="Back to gallery">
+                <i class="fas fa-arrow-left" aria-hidden="true"></i>
+            </a>
+            <div class="rd-title">
+                <h1 class="rd-title-main" title="<%= rdTitle %>"><%= rdTitle %></h1>
+                <span class="rd-title-sub"><%= rdAuthor || 'PDF' %></span>
+            </div>
+            <div class="rd-actions" role="toolbar" aria-label="PDF options">
+                <a class="rd-btn" href="<%= rdPdfUrl %>" target="_blank" rel="noopener" aria-label="Open PDF in a new tab" title="Open in new tab">
+                    <i class="fas fa-external-link-alt" aria-hidden="true"></i>
+                </a>
+                <a class="rd-btn rd-hide-sm" href="<%= rdPdfUrl %>" download="<%= rdPdfName %>" aria-label="Download PDF" title="Download PDF">
+                    <i class="fas fa-download" aria-hidden="true"></i>
+                </a>
+                <% if (canEditComic) { %>
+                <a class="rd-btn rd-hide-sm" href="/comic/<%= encodeURIComponent(comic_Field.savedFolder) %>/<%= comic_Field.id %>" aria-label="Edit comic details" title="Edit comic details">
+                    <i class="fas fa-edit" aria-hidden="true"></i>
+                </a>
                 <% } %>
+                <button id="pdfFullscreen" class="rd-btn" type="button" aria-label="Enter fullscreen" title="Fullscreen (F)" hidden>
+                    <i class="fas fa-expand" aria-hidden="true"></i>
+                </button>
             </div>
-            <div>
-                <div class="viewer-title"><%=comicTitle%></div>
-                <div class="viewer-meta">
-                    <% if(comic_Field.author){ %>
-                        <span><%=comic_Field.author%></span>
-                    <% }else{ %>
-                        <span>PDF upload</span>
-                    <% } %>
-                </div>
-            </div>
+        </header>
+
+        <iframe id="pdfFrame" class="rd-pdf-frame" title="<%= rdTitle %> (PDF)" src="<%= rdPdfUrl %>#toolbar=1&amp;navpanes=0&amp;view=FitH"></iframe>
+
+        <div id="pdfFallback" class="rd-pdf-fallback" hidden>
+            <i class="fas fa-file-pdf" style="font-size:40px;" aria-hidden="true"></i>
+            <p style="margin:0;max-width:340px;">This browser cannot show PDFs inside the page. Open it in the built-in PDF viewer or download it.</p>
+            <a class="rd-pill rd-pill-accent" href="<%= rdPdfUrl %>" target="_blank" rel="noopener"><i class="fas fa-external-link-alt" aria-hidden="true"></i> Open PDF</a>
+            <a class="rd-pill" href="<%= rdPdfUrl %>" download="<%= rdPdfName %>"><i class="fas fa-download" aria-hidden="true"></i> Download</a>
         </div>
-        <iframe class="viewer-frame" src="/public/uploads/<%-savedFolder%>/<%- pdfFile.split('/').map(encodeURIComponent).join('/') %>#toolbar=1&navpanes=0"></iframe>
     </div>
+
+    <script>
+    (function () {
+        var frame = document.getElementById('pdfFrame');
+        var fallback = document.getElementById('pdfFallback');
+        // Browsers without an inline PDF viewer (most Android browsers) would show
+        // a blank frame or start a download: offer explicit actions instead.
+        if (navigator.pdfViewerEnabled === false && frame && fallback) {
+            frame.parentNode.removeChild(frame);
+            fallback.hidden = false;
+        }
+
+        var shell = document.getElementById('pdfShell');
+        var button = document.getElementById('pdfFullscreen');
+        var supported = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+        function isFullscreen() {
+            return !!(document.fullscreenElement || document.webkitFullscreenElement);
+        }
+        function sync() {
+            if (!button) {
+                return;
+            }
+            var icon = button.querySelector('i');
+            if (icon) {
+                icon.className = 'fas ' + (isFullscreen() ? 'fa-compress' : 'fa-expand');
+            }
+            button.setAttribute('aria-label', isFullscreen() ? 'Exit fullscreen' : 'Enter fullscreen');
+        }
+        function toggle() {
+            try {
+                var result = isFullscreen()
+                    ? (document.exitFullscreen || document.webkitExitFullscreen).call(document)
+                    : (shell.requestFullscreen || shell.webkitRequestFullscreen).call(shell);
+                if (result && typeof result.catch === 'function') {
+                    result.catch(function () {});
+                }
+            } catch (error) {}
+        }
+        if (button && supported) {
+            button.hidden = false;
+            button.addEventListener('click', toggle);
+            document.addEventListener('fullscreenchange', sync);
+            document.addEventListener('webkitfullscreenchange', sync);
+            document.addEventListener('keydown', function (event) {
+                var tag = event.target && event.target.tagName;
+                if ((event.key === 'f' || event.key === 'F') && !event.ctrlKey && !event.metaKey && !event.altKey && tag !== 'INPUT' && tag !== 'TEXTAREA') {
+                    event.preventDefault();
+                    toggle();
+                }
+            });
+        }
+    })();
+    </script>
 </body>
 </html>

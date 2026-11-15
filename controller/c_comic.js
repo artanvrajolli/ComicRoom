@@ -1,4 +1,5 @@
 const fs = require('fs')
+const { pipeline } = require('stream/promises');
 const extractComics = require('../utils/extractComic')
 const comic_table = require('../model/m_comic')
 const Op = require('sequelize').Op;
@@ -8,6 +9,10 @@ const jobProcessor = require('../utils/jobProcessor');
 const UploadJob = require('../model/m_uploadJob');
 const { ALLOWED_UPLOAD_EXTENSIONS, isSupportedComicImageFile, listComicPages, rebuildComicImagePages, resolveComicAssets, sanitizeUploadFileName } = require('../utils/comicStorage');
 const { detectComicMetadata } = require('../utils/aiMetadata');
+const thumbnails = require('../utils/thumbnails');
+const { keywordWhere, normalizeKeyword } = require('../utils/queryHelpers');
+
+const GALLERY_ATTRIBUTES = ["id","title","author","coverImage","totalPages","savedFolder"];
 
 function checkIfisOnline(req,res,next){
     if(typeof req.session.userData == 'undefined'){
@@ -28,9 +33,6 @@ function getUploadInfo(fileName) {
 }
 
 const PostComicUpload = async (req,res)=>{
-    console.log('PostComicUpload called');
-    console.log('req.files:', req.files);
-    console.log('req.session.userData:', req.session.userData);
     
     // Check if req.files exists first
     if(!req.files || typeof req.files.fileComicUpload == 'undefined' || req.files.fileComicUpload == null){
@@ -113,6 +115,9 @@ const findOwnedComic = async (req)=>{
 
 const updateComicAssetMetadata = async (comic)=>{
     const comicAssets = resolveComicAssets(comic.savedFolder);
+    if(comic.coverImage === comicAssets.coverImage && comic.totalPages === comicAssets.totalPages){
+        return comicAssets;
+    }
     await comic_table.update({
         coverImage: comicAssets.coverImage,
         totalPages: comicAssets.totalPages
@@ -124,6 +129,7 @@ const updateComicAssetMetadata = async (comic)=>{
      });
     comic.coverImage = comicAssets.coverImage;
     comic.totalPages = comicAssets.totalPages;
+    thumbnails.warmThumbnail(comic);
     return comicAssets;
 }
 
@@ -345,7 +351,7 @@ const UpdateComicDetails =async (req,res)=>{
         totalPages: comicAssets.totalPages,
         title:req.body.title,
         author:req.body.author || "",
-        description:req.body.description || "",
+        description:String(req.body.description || "").slice(0, 5000),
         savedFolder:comic_folder_id
      }, {
      where: {
@@ -390,16 +396,29 @@ const showcomic_id = async (req,res)=>{
             res.redirect("/comic");
             return;
         }
-        res.render("comicView",{ userData:req.session.userData , comicImages:comicAssets.images , savedFolder:data.savedFolder,comicTitle:data.title,comic_Field:data,pageNumber: pageNumber, canEditComic})
+        // Next comic in gallery order (gallery lists newest first, so "next" is the next lower id).
+        const nextComic = await comic_table.findOne({
+            attributes: ["id","title"],
+            where: {
+                id: { [Op.lt]: data.id },
+                title: { [Op.ne]: null },
+                coverImage: { [Op.ne]: "" }
+            },
+            order: [["id","DESC"]]
+        }).catch(()=>null);
+        res.render("comicView",{ userData:req.session.userData , comicImages:comicAssets.images , savedFolder:data.savedFolder,comicTitle:data.title,comic_Field:data,pageNumber: pageNumber, canEditComic, nextComic: nextComic ? { id: nextComic.id, title: nextComic.title } : null})
     }).catch((err)=>{
-        console.log(err);
+        console.error('Error showing comic:', err);
+        if(!res.headersSent){
+            res.status(500).send("Unable to load this comic.");
+        }
     })
 }
 
 const showgallery_comic = async (req,res)=>{
-    var searchKeywords = req.query.keyword || "";
+    var searchKeywords = normalizeKeyword(req.query.keyword);
     comic_table.findAll({
-        attributes:["id","title","coverImage","description","totalPages","savedFolder"],
+        attributes: GALLERY_ATTRIBUTES,
         where:{
             [Op.not]:{
                 [Op.or]:{
@@ -407,12 +426,7 @@ const showgallery_comic = async (req,res)=>{
                     coverImage: ""
                 }
             },
-            [Op.or]:{
-                title: {[Op.like]: '%'+searchKeywords+'%'},
-                description:{[Op.like]: '%'+searchKeywords+'%'},
-                author:{[Op.like]: '%'+searchKeywords+'%'},
-            }
-            
+            ...keywordWhere(searchKeywords)
         },
         order: [
             ['id', 'DESC'],
@@ -431,8 +445,60 @@ const showgallery_comic = async (req,res)=>{
         res.render("v_comicGallery",{ comics:data, userData: req.session.userData , searchKeywords:searchKeywords })
 
     }).catch((err)=>{
-        res.send(err);
+        console.error('Error loading gallery:', err);
+        res.status(500).send("Unable to load comics.");
     })
+}
+
+// GET /comic/cover/:id -> resized cover thumbnail (WebP), cached on disk and in memory.
+const serveComicCover = async (req,res)=>{
+    const comicId = Number.parseInt(req.params.id, 10);
+    if(!Number.isInteger(comicId) || comicId < 1 || String(comicId) !== req.params.id){
+        res.status(404).end();
+        return;
+    }
+    let comic = null;
+    try{
+        comic = await comic_table.findByPk(comicId, { attributes: ["id","savedFolder","coverImage"] });
+    }catch(err){
+        console.error('Cover lookup failed:', err.message);
+        res.status(500).end();
+        return;
+    }
+    const originalPath = thumbnails.resolveOriginalCoverPath(comic);
+    if(!originalPath){
+        res.status(404).end();
+        return;
+    }
+
+    try{
+        const thumb = await thumbnails.getThumbnail(comic);
+        res.set({
+            'Content-Type': 'image/webp',
+            'Cache-Control': `public, max-age=${thumbnails.CACHE_MAX_AGE_SECONDS}`,
+            'ETag': thumb.etag,
+            'Last-Modified': thumb.lastModified.toUTCString()
+        });
+        if(req.fresh){
+            res.status(304).end();
+            return;
+        }
+        res.send(thumb.buffer);
+        return;
+    }catch(err){
+        if(err && err.code === 'ENOENT'){
+            res.status(404).end();
+            return;
+        }
+        console.error(`Cover thumbnail failed for comic ${comicId}, serving original:`, err.message);
+    }
+
+    // Fallback: stream the original cover (send handles ETag/Last-Modified/304).
+    res.sendFile(originalPath, { maxAge: thumbnails.CACHE_MAX_AGE_SECONDS * 1000, dotfiles: 'allow' }, (err)=>{
+        if(err && !res.headersSent){
+            res.status(err.status === 404 || err.code === 'ENOENT' ? 404 : 500).end();
+        }
+    });
 }
 
 const fetchPage = async (id_comic,userId)=>{
@@ -488,19 +554,16 @@ const getUploadStatus = async (req, res) => {
 
 const getUploadStatusAPI = async (req, res) => {
     const jobId = req.params.jobId;
-    console.log(`API: Checking status for job ${jobId}`);
     
     try {
         const job = await jobProcessor.getJobStatus(jobId);
         
         if (!job) {
-            console.log(`API: Job ${jobId} not found`);
             return res.status(404).json({ error: "Job not found" });
         }
         
         // Check if user owns this job
         if (req.session.userData && job.userId !== req.session.userData.id) {
-            console.log(`API: Access denied for job ${jobId}, user ${req.session.userData.id} vs job user ${job.userId}`);
             return res.status(403).json({ error: "Access denied" });
         }
         
@@ -513,7 +576,6 @@ const getUploadStatusAPI = async (req, res) => {
             fileName: job.fileName
         };
         
-        console.log(`API: Returning status for job ${jobId}:`, response);
         res.json(response);
         
     } catch (error) {
@@ -523,10 +585,7 @@ const getUploadStatusAPI = async (req, res) => {
 }
 
 const getActiveJobs = async (req, res) => {
-    console.log('API: Getting active jobs for user:', req.session.userData?.id);
-    
     if (!req.session.userData) {
-        console.log('API: User not authenticated');
         return res.status(401).json({ error: "Not authenticated" });
     }
     
@@ -541,7 +600,6 @@ const getActiveJobs = async (req, res) => {
             attributes: ['jobId', 'fileName', 'status', 'progress', 'createdAt']
         });
         
-        console.log(`API: Found ${activeJobs.length} active jobs for user ${req.session.userData.id}`);
         res.json({ jobs: activeJobs });
     } catch (error) {
         console.error('Error getting active jobs:', error);
@@ -551,13 +609,6 @@ const getActiveJobs = async (req, res) => {
 
 const PostChunkedUpload = async (req, res) => {
     try {
-        console.log('Chunked upload received:', {
-            chunkIndex: req.body.chunkIndex,
-            totalChunks: req.body.totalChunks,
-            fileName: req.body.fileName,
-            uploadId: req.body.uploadId
-        });
-
         // Check authentication
         if (!req.session.userData) {
             return res.status(401).json({ error: "Authentication required" });
@@ -570,6 +621,12 @@ const PostChunkedUpload = async (req, res) => {
             return res.status(400).json({ error: "Missing required parameters" });
         }
 
+        const chunkNumber = Number.parseInt(chunkIndex, 10);
+        const chunkTotal = Number.parseInt(totalChunks, 10);
+        if (!/^[A-Za-z0-9_-]{1,100}$/.test(String(uploadId)) || !Number.isInteger(chunkTotal) || chunkTotal < 1 || chunkTotal > 100000 || !Number.isInteger(chunkNumber) || chunkNumber < 0 || chunkNumber >= chunkTotal) {
+            return res.status(400).json({ error: "Invalid upload parameters" });
+        }
+
         // Validate file extension
         const uploadInfo = getUploadInfo(fileName);
         if (!ALLOWED_UPLOAD_EXTENSIONS.includes(uploadInfo.extension)) {
@@ -578,44 +635,39 @@ const PostChunkedUpload = async (req, res) => {
 
         // Create chunks directory if it doesn't exist
         const chunksDir = process.cwd() + `/public/tmp/chunks/${uploadId}`;
-        if (!fs.existsSync(chunksDir)) {
-            fs.mkdirSync(chunksDir, { recursive: true });
-        }
+        await fs.promises.mkdir(chunksDir, { recursive: true });
 
         // Save the chunk
-        const chunkPath = `${chunksDir}/chunk_${chunkIndex}`;
+        const chunkPath = `${chunksDir}/chunk_${chunkNumber}`;
         await chunk.mv(chunkPath);
 
-        console.log(`Chunk ${chunkIndex}/${totalChunks - 1} saved for upload ${uploadId}`);
-
         // Check if all chunks are received
-        const chunkFiles = fs.readdirSync(chunksDir);
-        if (chunkFiles.length === parseInt(totalChunks)) {
+        const chunkFiles = await fs.promises.readdir(chunksDir);
+        if (chunkFiles.length === chunkTotal) {
             console.log(`All chunks received for upload ${uploadId}, assembling file...`);
 
-            // Assemble the file
+            // Assemble the file by streaming each chunk (no sync reads on the request path)
             const finalFilePath = process.cwd() + `/public/tmp/${uploadId}_${uploadInfo.safeFileName}`;
             const writeStream = fs.createWriteStream(finalFilePath);
-
-            for (let i = 0; i < totalChunks; i++) {
-                const chunkPath = `${chunksDir}/chunk_${i}`;
-                if (fs.existsSync(chunkPath)) {
-                    const chunkData = fs.readFileSync(chunkPath);
-                    writeStream.write(chunkData);
-                    fs.unlinkSync(chunkPath); // Clean up chunk
+            try {
+                for (let i = 0; i < chunkTotal; i++) {
+                    const partPath = `${chunksDir}/chunk_${i}`;
+                    await pipeline(fs.createReadStream(partPath), writeStream, { end: false });
                 }
+            } finally {
+                writeStream.end();
             }
 
-            writeStream.end();
-
             // Wait for the write stream to finish
-            await new Promise((resolve, reject) => {
-                writeStream.on('finish', resolve);
-                writeStream.on('error', reject);
-            });
+            if (!writeStream.writableFinished) {
+                await new Promise((resolve, reject) => {
+                    writeStream.once('finish', resolve);
+                    writeStream.once('error', reject);
+                });
+            }
 
             // Clean up chunks directory
-            fs.rmdirSync(chunksDir);
+            await fs.promises.rm(chunksDir, { recursive: true, force: true });
 
             // Create a job for processing
             const comicFolderId = "comic_" + new Date().getTime();
@@ -635,7 +687,7 @@ const PostChunkedUpload = async (req, res) => {
         } else {
             return res.json({
                 status: 'chunk_received',
-                chunkIndex: chunkIndex,
+                chunkIndex: chunkNumber,
                 totalReceived: chunkFiles.length,
                 totalExpected: totalChunks
             });
@@ -656,6 +708,7 @@ module.exports = {
     UpdateComicDetails,
     showcomic_id,
     showgallery_comic,
+    serveComicCover,
     checkIfisOnline,
     getUpdateComicDetails,
     getComicAiMetadata,

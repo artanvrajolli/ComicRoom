@@ -1,9 +1,22 @@
 const CACHE_PREFIX = 'comicroom-';
-const SHELL_CACHE = 'comicroom-shell-v1';
+// Bump SHELL_CACHE when shell assets change. Do NOT bump PAGES/IMAGE/META:
+// that would wipe comics users saved for offline reading.
+const SHELL_CACHE = 'comicroom-shell-v2';
 const PAGES_CACHE = 'comicroom-pages-v1';
 const IMAGE_CACHE = 'comicroom-images-v1';
 const META_CACHE = 'comicroom-meta-v1';
-const ACTIVE_CACHES = [SHELL_CACHE, PAGES_CACHE, IMAGE_CACHE, META_CACHE];
+const COVER_CACHE = 'comicroom-covers-v1';
+const ACTIVE_CACHES = [SHELL_CACHE, PAGES_CACHE, IMAGE_CACHE, META_CACHE, COVER_CACHE];
+const MAX_COVER_ENTRIES = 300;
+const COVER_PATH_REGEX = /^\/(?:comic\/)?cover\/\d+\/?$/;
+// Only these HTML pages are cached for offline use. Admin, upload, login,
+// register, edit and status pages always go to the network and are never stored.
+const CACHEABLE_PAGE_REGEXES = [
+    /^\/$/,
+    /^\/comic\/?$/,
+    /^\/(?:comic\/)?show\/\d+\/?$/,
+    /^\/onread\/?$/
+];
 const OFFLINE_URL = '/public/offline.html';
 const META_KEY = '/__offline__/comics.json';
 const MAX_OFFLINE_COMICS = 5;
@@ -14,7 +27,10 @@ const SHELL_ASSETS = [
     '/public/css/bootstrap/css/bootstrap.min.css',
     '/public/css/bootstrap/js/bootstrap.bundle.min.js',
     '/public/css/comic.css',
+    '/public/css/reader.css',
+    '/public/script/viewComic.js',
     '/public/css/css/all.css',
+    '/public/css/css/all.min.css',
     '/public/css/webfonts/fa-solid-900.woff2',
     '/public/css/webfonts/fa-regular-400.woff2',
     '/public/css/webfonts/fa-brands-400.woff2',
@@ -263,38 +279,118 @@ async function cacheFirstImage(request) {
     }
 
     const response = await fetch(request);
-    if (response && response.ok) {
-        await cache.put(request, response.clone());
+    if (isCacheableResponse(response)) {
+        await safePut(cache, request, response.clone());
     }
     return response;
 }
 
-async function cacheFirstAsset(request) {
+async function safePut(cache, request, response) {
+    try {
+        await cache.put(request, response);
+        return true;
+    } catch (error) {
+        return false;
+    }
+}
+
+async function trimCache(cache, maxEntries) {
+    const keys = await cache.keys();
+    const excess = keys.length - maxEntries;
+    for (let index = 0; index < excess; index += 1) {
+        await cache.delete(keys[index]);
+    }
+}
+
+function isCacheableResponse(response) {
+    return !!response && response.ok && response.status !== 206 && (response.type === 'basic' || response.type === 'default');
+}
+
+// Versioned (?v=...) assets and fonts/icons never change under the same URL:
+// cache-first. Unversioned CSS/JS: stale-while-revalidate so edits still
+// reach clients. Offline, fall back to any cached copy regardless of ?v=.
+async function handleAsset(event, request) {
     const cache = await caches.open(SHELL_CACHE);
+    const url = new URL(request.url);
+    const immutable = url.search !== '' || /\.(?:woff2?|ttf|eot|png|jpe?g|gif|svg|ico|webp|webmanifest)$/i.test(url.pathname);
     const cached = await cache.match(request);
-    if (cached) {
+    if (cached && immutable) {
         return cached;
     }
 
-    const response = await fetch(request);
-    if (response && response.ok) {
-        await cache.put(request, response.clone());
+    const network = fetch(request).then(async function (response) {
+        if (isCacheableResponse(response)) {
+            await safePut(cache, request, response.clone());
+        }
+        return response;
+    });
+
+    if (cached) {
+        event.waitUntil(network.catch(function () {}));
+        return cached;
     }
-    return response;
+
+    try {
+        return await network;
+    } catch (error) {
+        const fallback = await cache.match(request, { ignoreSearch: true });
+        if (fallback) {
+            return fallback;
+        }
+        throw error;
+    }
+}
+
+// Gallery cover thumbnails (/comic/cover/<id>): stale-while-revalidate with a
+// capped number of entries so covers seen online still show offline.
+async function handleCover(event, request) {
+    const cache = await caches.open(COVER_CACHE);
+    const cached = await cache.match(request);
+
+    const network = fetch(request).then(async function (response) {
+        if (isCacheableResponse(response)) {
+            if (await safePut(cache, request, response.clone())) {
+                await trimCache(cache, MAX_COVER_ENTRIES);
+            }
+        }
+        return response;
+    });
+
+    if (cached) {
+        event.waitUntil(network.catch(function () {}));
+        return cached;
+    }
+
+    try {
+        return await network;
+    } catch (error) {
+        const fallback = await cache.match(request, { ignoreSearch: true });
+        if (fallback) {
+            return fallback;
+        }
+        return new Response('', { status: 504, statusText: 'Offline' });
+    }
+}
+
+function isCacheablePage(url) {
+    return CACHEABLE_PAGE_REGEXES.some(function (regex) {
+        return regex.test(url.pathname);
+    });
 }
 
 async function networkFirstPage(request) {
     const cache = await caches.open(PAGES_CACHE);
+    const cacheable = isCacheablePage(new URL(request.url));
 
     try {
         const response = await fetch(request);
         const contentType = response.headers.get('content-type') || '';
-        if (response && response.ok && contentType.indexOf('text/html') !== -1) {
-            await cache.put(request, response.clone());
+        if (cacheable && response && response.ok && !response.redirected && contentType.indexOf('text/html') !== -1) {
+            await safePut(cache, request, response.clone());
         }
         return response;
     } catch (error) {
-        const cached = await cache.match(request, { ignoreSearch: true });
+        const cached = cacheable ? await cache.match(request, { ignoreSearch: true }) : null;
         if (cached) {
             return cached;
         }
@@ -322,6 +418,11 @@ self.addEventListener('fetch', function (event) {
         return;
     }
 
+    // Partial (range) requests, e.g. PDFs/videos, cannot be cached: go to the network.
+    if (request.headers.has('range')) {
+        return;
+    }
+
     if (request.mode === 'navigate') {
         event.respondWith(networkFirstPage(request));
         return;
@@ -332,8 +433,13 @@ self.addEventListener('fetch', function (event) {
         return;
     }
 
+    if (COVER_PATH_REGEX.test(url.pathname)) {
+        event.respondWith(handleCover(event, request));
+        return;
+    }
+
     if (url.pathname.indexOf('/public/') === 0 || url.pathname === '/manifest.webmanifest') {
-        event.respondWith(cacheFirstAsset(request));
+        event.respondWith(handleAsset(event, request));
     }
 });
 

@@ -1,277 +1,103 @@
-<!DOCTYPE html>
+<%
+  var isLoggedIn = typeof userData != 'undefined' && userData != null;
+  var isAdmin = typeof isAdminUser !== 'undefined' && isAdminUser;
+  var currentKeyword = (typeof searchKeywords !== 'undefined' && searchKeywords) ? searchKeywords : '';
+%><!DOCTYPE html>
 <html lang="en">
 
 <head>
-  <%-include("head_tags")%>
+  <%- include("head_tags") %>
   <title>ComicRoom</title>
 </head>
 
-<body class="h-100 text-center text-white bg-dark" data-user-authenticated="<%= typeof userData != 'undefined' ? 'true' : 'false' %>">
-  <!-- begin header -->
-  <header style="background-color: #212121;border-bottom: 2px solid #353535;" class="p-3 text-white">
-    <div class="container">
-      <div class="d-flex flex-wrap align-items-center justify-content-center justify-content-lg-start mx-5">
-        <ul class=" nav col-12 col-lg-auto me-lg-auto mb-2 justify-content-center mb-md-0">
-          <li><a href="/comic" class="nav-link px-2 text-secondary"><i class="fas fa-globe"></i> Gallery</a></li>
-          <li <% if(typeof userData != 'undefined' ){%>style="display: block;"<% }else{ %>style="display: none;"<% } %>><a href="/onread" class="nav-link px-2 text-secondary"><i class="fas fa-history"></i> Reading</a></li>
-          <li <% if(typeof isAdminUser !== 'undefined' && isAdminUser){ %>style="display: block;"<% }else{ %>style="display: none;"<% } %>><a href="/admin" class="nav-link px-2 text-secondary"><i class="fas fa-cog"></i> Admin</a></li>
-          <li class="nav-link px-2 text-secondary position-relative">
-            <div id="uploadNotification" class="position-relative" style="display: none;">
-              <i class="fas fa-bell" style="font-size: 18px; cursor: pointer;"
-                onclick="toggleNotificationDropdown()"></i>
-              <span id="notificationBadge"
-                class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
-                style="font-size: 10px; display: none;">
-                0
-              </span>
-              <div id="notificationDropdown" class="position-absolute bg-dark border rounded p-2"
-                style="display: none; top: 30px; right: -50px; min-width: 250px; z-index: 1000; box-shadow: 0 4px 8px rgba(0,0,0,0.3);">
-                <div class="text-start">
-                  <h6 class="text-white mb-2">Upload Notifications</h6>
-                  <div id="notificationList"></div>
-                  <div class="mt-2">
-                    <button class="btn btn-sm btn-outline-light" onclick="clearNotifications()">Clear All</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </li>
-          <li <% if(typeof searchKeywords !== 'undefined' && searchKeywords !== '' ){%>style="cursor: pointer;display: none;"<% }else{ %>style="cursor: pointer;"<% } %> id="searchButton" class="nav-link px-2 text-secondary"><i class="fas fa-search"></i> Search
-          </li>
-          <li>
+<body class="cr-app" data-user-authenticated="<%= isLoggedIn ? 'true' : 'false' %>">
+  <a class="cr-skip-link" href="#main-content">Skip to content</a>
 
-            <div id="formSearch" <% if(typeof searchKeywords === 'undefined' || searchKeywords === '' ){%>style="margin-top: 2px;display: none;"<% }else{ %>style="margin-top: 2px;"<% } %> class="form-group has-feedback">
-              <form id="searchOption" class="input-group" method="GET" action="/comic">
-                <span onclick="document.getElementById('submit_search').click();" class="input-group-addon"
-                  style="border:1px solid white;background-color:  #212529;border-radius: 7px 0 0 7px;padding-top: 2px;"><span
-                    style="font-size: 27px;padding:4px;color: #636464;" class="fas fa-search"></span></span>
-                <input name="keyword" id="searchInput" value="<% if(typeof searchKeywords !== 'undefined'){%><%=searchKeywords%><%}%>" type="text" class="form-control" placeholder="Search..." style="border-left: 0px;
-                    color:white; background-color: #212529;">
-                <!-- To use Enter from KeyBoard -->
-                <button id="submit_search" style="display: none;">Hidden Button for Search</button>
-              </form>
-              <script>
-                spliter = window.location.pathname.split(/\//);
-                document.getElementById('searchOption').setAttribute("action", spliter[spliter.length - 1]);
-              </script>
-            </div>
-          </li>
-        </ul>
-        <% if(typeof userData=='undefined' ){%>
-          <div class="text-end">
-            <a class="text-white me-2" href="/login">
-              <i aria-hidden="true" class="pt-1 fas fa-sign-in-alt"></i> Login
-            </a>
-            <a href="/register">
-              <button type="button" class="btn btn-warning"><i class="pt-1 fas fa-user-plus"></i> Sign-up</button>
-            </a>
+  <header class="cr-header">
+    <nav class="navbar navbar-expand-lg navbar-dark container-xl" aria-label="Main">
+      <a class="navbar-brand cr-brand" href="/comic">
+        <img src="/public/icons/icon-192.png" width="28" height="28" alt="">
+        <span>ComicRoom</span>
+      </a>
+
+      <% if (isLoggedIn) { %>
+      <div class="cr-nav-quick">
+        <div id="uploadNotification" class="position-relative" style="display: none;">
+          <button type="button" id="notificationToggle" class="cr-icon-btn" onclick="toggleNotificationDropdown()"
+            aria-label="Upload notifications" aria-haspopup="true" aria-expanded="false" aria-controls="notificationDropdown">
+            <i class="fas fa-bell" aria-hidden="true"></i>
+            <span id="notificationBadge" class="cr-badge" style="display: none;">0</span>
+          </button>
+          <div id="notificationDropdown" class="cr-notify-panel" role="region" aria-label="Upload notifications" style="display: none;">
+            <h2>Upload notifications</h2>
+            <div id="notificationList"></div>
+            <button type="button" class="btn btn-sm cr-btn-ghost w-100 mt-1" onclick="clearNotifications()">Clear all</button>
           </div>
-          <% }else{ %>
-            <div class="text-end">
-              <a href="/comic/upload" style="text-decoration: none;color: wheat;">
-                <button type="button" class="btn btn-outline-light me-2">
-
-                  <i class="fas fa-file-upload"></i> UPLOAD
-
-                </button>
-                <a href="/logout" style="color: #525252;"> Logout </a>
-              </a>
-            </div>
-            <% } %>
+        </div>
       </div>
-    </div>
+      <% } %>
+
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#crNavbar"
+        aria-controls="crNavbar" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+      <div class="collapse navbar-collapse" id="crNavbar">
+        <ul class="navbar-nav" id="crNavLinks">
+          <li class="nav-item">
+            <a class="nav-link" href="/comic" data-nav="gallery"><i class="fas fa-th-large" aria-hidden="true"></i> Gallery</a>
+          </li>
+          <% if (isLoggedIn) { %>
+          <li class="nav-item">
+            <a class="nav-link" href="/onread" data-nav="reading"><i class="fas fa-book-open" aria-hidden="true"></i> Reading</a>
+          </li>
+          <% } %>
+          <% if (isAdmin) { %>
+          <li class="nav-item">
+            <a class="nav-link" href="/admin" data-nav="admin"><i class="fas fa-cog" aria-hidden="true"></i> Admin</a>
+          </li>
+          <% } %>
+        </ul>
+
+        <form id="searchOption" class="cr-search" role="search" method="GET" action="/comic">
+          <label for="searchInput" class="visually-hidden">Search comics</label>
+          <i class="fas fa-search cr-search-icon" aria-hidden="true"></i>
+          <input name="keyword" id="searchInput" type="search" class="form-control" placeholder="Search title, author, description"
+            value="<%= currentKeyword %>" autocomplete="off" enterkeyhint="search">
+        </form>
+
+        <div class="cr-nav-actions">
+          <% if (!isLoggedIn) { %>
+            <a class="btn cr-btn-ghost" href="/login" data-nav="login"><i class="fas fa-sign-in-alt" aria-hidden="true"></i> Log in</a>
+            <a class="btn cr-btn-accent" href="/register" data-nav="register"><i class="fas fa-user-plus" aria-hidden="true"></i> Sign up</a>
+          <% } else { %>
+            <a class="btn cr-btn-accent" href="/comic/upload" data-nav="upload"><i class="fas fa-file-upload" aria-hidden="true"></i> Upload</a>
+            <a class="btn cr-btn-ghost" href="/logout"><i class="fas fa-sign-out-alt" aria-hidden="true"></i> Log out</a>
+          <% } %>
+        </div>
+      </div>
+    </nav>
+    <script>
+      (function () {
+        var path = window.location.pathname;
+        var key = 'gallery';
+        if (/^\/onread/.test(path)) key = 'reading';
+        else if (/^\/admin/.test(path)) key = 'admin';
+        else if (/^\/comic\/upload/.test(path)) key = 'upload';
+        else if (/^\/login/.test(path)) key = 'login';
+        else if (/^\/register/.test(path)) key = 'register';
+        else if (!/^\/(comic(\/|$)|$)/.test(path)) key = '';
+        if (key) {
+          var link = document.querySelector('.cr-header [data-nav="' + key + '"]');
+          if (link) {
+            link.classList.add('active');
+            link.setAttribute('aria-current', 'page');
+          }
+        }
+        // Search the list the user is looking at: reading list on /onread, gallery everywhere else.
+        document.getElementById('searchOption').setAttribute('action', key === 'reading' ? '/onread' : '/comic');
+      })();
+    </script>
   </header>
-  <!-- end header -->
 
-  <script>
-    // Upload notification system
-    let completedNotifications = JSON.parse(localStorage.getItem('completedNotifications') || '[]');
-    let lastKnownJobs = new Set();
-
-    function addCompletedNotification(jobId, fileName, comicId, comicFolderId, success = true, errorMessage = null) {
-      const notification = {
-        id: Date.now(),
-        jobId,
-        fileName,
-        comicId,
-        comicFolderId,
-        success,
-        errorMessage,
-        timestamp: new Date().toISOString(),
-        viewed: false
-      };
-
-      completedNotifications.unshift(notification); // Add to beginning
-      if (completedNotifications.length > 10) {
-        completedNotifications = completedNotifications.slice(0, 10); // Keep only last 10
-      }
-
-      localStorage.setItem('completedNotifications', JSON.stringify(completedNotifications));
-      updateNotificationUI();
-    }
-
-    function toggleNotificationDropdown() {
-      const dropdown = document.getElementById('notificationDropdown');
-      dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
-
-      // Mark all as viewed
-      completedNotifications.forEach(n => n.viewed = true);
-      localStorage.setItem('completedNotifications', JSON.stringify(completedNotifications));
-      updateNotificationUI();
-    }
-
-    function clearNotifications() {
-      completedNotifications = [];
-      localStorage.setItem('completedNotifications', JSON.stringify(completedNotifications));
-      updateNotificationUI();
-      document.getElementById('notificationDropdown').style.display = 'none';
-    }
-
-    function updateNotificationUI() {
-      const notificationArea = document.getElementById('uploadNotification');
-      const badge = document.getElementById('notificationBadge');
-      const list = document.getElementById('notificationList');
-
-      console.log('Updating notification UI, notifications:', completedNotifications.length);
-
-      if (!notificationArea) {
-        console.log('Notification area not found - user not logged in');
-        return; // Not logged in
-      }
-
-      const unviewed = completedNotifications.filter(n => !n.viewed).length;
-      console.log('Unviewed notifications:', unviewed);
-
-      if (completedNotifications.length > 0) {
-        console.log('Showing notification area');
-        notificationArea.style.display = 'block';
-
-        if (unviewed > 0) {
-          badge.style.display = 'block';
-          badge.textContent = unviewed;
-          console.log('Showing badge with count:', unviewed);
-        } else {
-          badge.style.display = 'none';
-          console.log('Hiding badge - all notifications viewed');
-        }
-
-        // Update notification list
-        list.innerHTML = '';
-        completedNotifications.forEach(notification => {
-          const item = document.createElement('div');
-          item.className = 'mb-2 p-2 rounded ' + (notification.viewed ? 'bg-secondary' : 'bg-primary');
-          item.style.fontSize = '12px';
-
-          if (notification.success) {
-            item.innerHTML = `
-             <div class="text-success"><i class="fas fa-check-circle"></i> Upload Complete</div>
-             <div class="text-truncate">${notification.fileName}</div>
-             <div class="mt-1">
-               <a href="/comic/${notification.comicFolderId}/${notification.comicId}" class="btn btn-xs btn-outline-light" style="font-size: 10px;">Review Details</a>
-             </div>
-             <div class="text-muted" style="font-size: 10px;">${new Date(notification.timestamp).toLocaleString()}</div>
-           `;
-          } else {
-            item.innerHTML = `
-             <div class="text-danger"><i class="fas fa-exclamation-circle"></i> Upload Failed</div>
-             <div class="text-truncate">${notification.fileName}</div>
-             <div class="text-danger" style="font-size: 10px;">${notification.errorMessage || 'Unknown error'}</div>
-             <div class="text-muted" style="font-size: 10px;">${new Date(notification.timestamp).toLocaleString()}</div>
-           `;
-          }
-
-          list.appendChild(item);
-        });
-      } else {
-        console.log('No notifications - hiding notification area');
-        notificationArea.style.display = 'none';
-      }
-    }
-
-    async function checkActiveJobs() {
-      try {
-        const response = await fetch('/ajax/upload/active');
-        if (!response.ok) return;
-
-        const data = await response.json();
-        const currentJobs = new Set(data.jobs.map(job => job.jobId));
-
-        // Check for completed jobs (jobs that were active but are no longer in the list)
-        for (const jobId of lastKnownJobs) {
-          if (!currentJobs.has(jobId)) {
-            // Job completed, check its final status
-            try {
-              const statusResponse = await fetch(`/ajax/upload/status/${jobId}`);
-              if (statusResponse.ok) {
-                const statusData = await statusResponse.json();
-                const job = data.jobs.find(j => j.jobId === jobId) || { fileName: statusData.fileName || 'Unknown file' };
-
-                if (statusData.status === 'completed') {
-                  addCompletedNotification(
-                    jobId,
-                    statusData.fileName || job.fileName,
-                    statusData.comicId,
-                    statusData.comicFolderId,
-                    true
-                  );
-                } else if (statusData.status === 'failed') {
-                  addCompletedNotification(
-                    jobId,
-                    statusData.fileName || job.fileName,
-                    null,
-                    null,
-                    false,
-                    statusData.errorMessage
-                  );
-                }
-              }
-            } catch (error) {
-              console.error('Error checking completed job status:', error);
-            }
-          }
-        }
-
-        // Update known jobs
-        lastKnownJobs = currentJobs;
-
-        console.log('Active jobs:', data.jobs.length);
-      } catch (error) {
-        console.error('Error checking active jobs:', error);
-      }
-    }
-
-    // Close dropdown when clicking outside
-    document.addEventListener('click', function (event) {
-      const dropdown = document.getElementById('notificationDropdown');
-      const notification = document.getElementById('uploadNotification');
-
-      if (dropdown && notification && !notification.contains(event.target)) {
-        dropdown.style.display = 'none';
-      }
-    });
-
-    // Test function to manually add a notification (for debugging)
-    function testNotification() {
-      addCompletedNotification('test123', 'Test Comic.cbz', 1, 'comic_123', true);
-      console.log('Test notification added');
-    }
-
-    // Initialize notification UI and start periodic checking
-    document.addEventListener('DOMContentLoaded', function () {
-      if (document.body.dataset.userAuthenticated !== 'true') {
-        return;
-      }
-      console.log('Initializing notification system...');
-      updateNotificationUI();
-
-      // Get initial active jobs
-      checkActiveJobs();
-
-      // Check active jobs every 15 seconds
-      setInterval(checkActiveJobs, 15000);
-
-      // Make test function globally available for debugging
-      window.testNotification = testNotification;
-      console.log('Notification system initialized. Try: testNotification() in console');
-    });
-  </script>
+  <main id="main-content" class="cr-main" tabindex="-1">
