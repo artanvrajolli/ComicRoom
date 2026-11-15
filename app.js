@@ -5,7 +5,9 @@ const app = express();
 const db = require('./config/database');
 const mainRouter = require('./routers/mainRouter')
 const fs = require('fs');
+const path = require('path');
 const jobProcessor = require('./utils/jobProcessor');
+const { isAdmin } = require('./utils/admin');
 
 // session handler
 app.use(session({
@@ -14,6 +16,11 @@ app.use(session({
     resave: false,
     cookie: { maxAge: 7 * 86400000 }
 }))
+
+app.use((req, res, next) => {
+    res.locals.isAdminUser = isAdmin(req.session.userData);
+    next();
+})
 
 // file upload handler
 app.use(fileUpload({
@@ -72,6 +79,14 @@ app.use((req, res, next) => {
 
 // public folder
 app.use("/public", express.static(__dirname + "/public"));
+
+// service worker
+app.get('/sw.js', (req, res) => {
+    res.type('application/javascript');
+    res.setHeader('Service-Worker-Allowed', '/');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.sendFile(path.join(__dirname, 'public', 'sw.js'));
+});
 
 // routers for all routers 
 app.use('/', mainRouter)

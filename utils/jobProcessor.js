@@ -4,6 +4,7 @@ const extractComics = require('./extractComic');
 const comic_table = require('../model/m_comic');
 const UploadJob = require('../model/m_uploadJob');
 const { extractMetadataFromFilename, getUploadFolderPath, resolveComicAssets, sanitizeUploadFileName } = require('./comicStorage');
+const { detectComicMetadata } = require('./aiMetadata');
 
 class JobProcessor {
     constructor() {
@@ -116,13 +117,22 @@ class JobProcessor {
                 throw new Error('No supported content was found in the uploaded file.');
             }
 
-            await job.update({ progress: 80 });
+            await job.update({ progress: 85 });
+
+            let aiMetadata = null;
+            try {
+                aiMetadata = await detectComicMetadata(job.comicFolderId, comicAssets.images);
+            } catch (error) {
+                console.error('AI metadata detection failed:', error.message);
+            }
+
+            await job.update({ progress: 95 });
 
             const comicData = await comic_table.create({
                 savedFolder: job.comicFolderId,
                 uid: job.userId,
-                title: extractedMetadata.title,
-                author: extractedMetadata.author || '',
+                title: (aiMetadata && aiMetadata.title) || extractedMetadata.title,
+                author: (aiMetadata && aiMetadata.author) || extractedMetadata.author || '',
                 description: '',
                 coverImage: comicAssets.coverImage,
                 totalPages: comicAssets.totalPages

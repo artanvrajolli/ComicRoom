@@ -20,6 +20,8 @@
                     <form method="post" class="mt-2">
                         <input class="mt-2 form-control" type="text" name="title" placeholder="title" value="<%= comic.title || '' %>">
                         <input class="mt-2 form-control" type="text" name="author" id="authortext" placeholder="author" value="<%= comic.author || '' %>">
+                        <button type="button" id="aiFillButton" class="btn btn-outline-info btn-sm mt-2"><i class="fas fa-robot"></i> AI fill title &amp; author</button>
+                        <div id="aiFillStatus" class="form-text text-info"></div>
                         <div class="mt-2 form-floating">
                             <textarea name="description" class="form-control" placeholder="" id="floatingTextarea2" style="height: 180px;"><%= comic.description || '' %></textarea>
                             <label class="text-dark" for="floatingTextarea2">Description</label>
@@ -87,4 +89,44 @@
         </div>
     </div>
 </div>
+<script>
+    (function(){
+        var aiButton = document.getElementById('aiFillButton');
+        var aiStatus = document.getElementById('aiFillStatus');
+        var titleInput = document.querySelector('input[name="title"]');
+        var authorInput = document.getElementById('authortext');
+        if(!aiButton || !aiStatus || !titleInput || !authorInput){
+            return;
+        }
+
+        aiButton.addEventListener('click', function(){
+            aiButton.disabled = true;
+            aiStatus.textContent = 'Reading the first pages...';
+            fetch('/comic/<%= comic.savedFolder %>/<%= comic.id %>/ai-metadata', { method: 'POST' })
+                .then(function(response){
+                    return response.json().then(function(data){
+                        return { ok: response.ok, data: data };
+                    });
+                })
+                .then(function(result){
+                    if(!result.ok){
+                        throw new Error(result.data && result.data.error ? result.data.error : 'AI request failed.');
+                    }
+                    if(result.data.title){
+                        titleInput.value = result.data.title;
+                    }
+                    if(typeof result.data.author === 'string' && result.data.author !== ''){
+                        authorInput.value = result.data.author;
+                    }
+                    aiStatus.textContent = result.data.author ? 'Filled title and author. Review and save.' : 'Filled title. No author was visible.';
+                })
+                .catch(function(error){
+                    aiStatus.textContent = error.message;
+                })
+                .finally(function(){
+                    aiButton.disabled = false;
+                });
+        });
+    })();
+</script>
 <%- include("footer") %>

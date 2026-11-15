@@ -1,0 +1,119 @@
+<%- include("header") %>
+<%
+    var sourceLabels = {
+        settings: 'Admin settings',
+        environment: 'Environment variable',
+        none: 'Not configured'
+    };
+    var sourceLabel = sourceLabels[settings.source] || sourceLabels.none;
+%>
+<div class="container content_c mt-5">
+    <div class="row justify-content-center">
+        <div class="col-12 col-lg-8">
+            <% if(typeof msg != 'undefined' && msg != ""){ %>
+                <div class="alert alert-warning"><%= msg %></div>
+            <% } %>
+            <div class="card bg-dark text-white border-secondary">
+                <div class="card-body text-start">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                        <h3 class="mb-0">AI provider settings</h3>
+                        <span class="badge <%= settings.apiKey ? 'bg-success' : 'bg-danger' %>"><%= settings.apiKey ? 'Configured' : 'Not configured' %></span>
+                    </div>
+                    <p class="text-muted">These credentials power the automatic comic title and author detection.</p>
+                    <div class="small mb-3">
+                        <div>Provider: <span class="text-white"><%= settings.provider %></span></div>
+                        <div>Model: <span class="text-white"><%= settings.model %></span></div>
+                        <div>Key: <span class="text-white"><%= maskedKey || 'not set' %></span> <span class="text-muted">(<%= sourceLabel %>)</span></div>
+                    </div>
+                    <form method="post" action="/admin">
+                        <label class="form-label" for="aiProvider">Provider</label>
+                        <select class="form-select" id="aiProvider" name="provider" data-defaults='<%- JSON.stringify(providerDefaults) %>'>
+                            <option value="commandcode" <%= settings.provider === 'commandcode' ? 'selected' : '' %>>Command Code</option>
+                            <option value="openai" <%= settings.provider === 'openai' ? 'selected' : '' %>>OpenAI</option>
+                            <option value="anthropic" <%= settings.provider === 'anthropic' ? 'selected' : '' %>>Anthropic</option>
+                        </select>
+
+                        <label class="form-label mt-3" for="aiApiKey">API key</label>
+                        <input class="form-control" id="aiApiKey" type="password" name="apiKey" autocomplete="new-password" placeholder="<%= settings.apiKey ? 'Leave blank to keep the current key' : 'Paste the provider API key' %>">
+                        <div class="form-text">Current key: <%= maskedKey || 'not set' %>. Keys are stored server-side and never shown in full. Enter the new provider's key when switching providers.</div>
+
+                        <label class="form-label mt-3" for="aiModel">Model</label>
+                        <input class="form-control" id="aiModel" type="text" name="model" value="<%= settings.model %>">
+
+                        <label class="form-label mt-3" for="aiBaseUrl">Endpoint URL</label>
+                        <input class="form-control" id="aiBaseUrl" type="text" name="baseUrl" value="<%= settings.baseUrl %>">
+                        <div class="form-text">Full chat completions endpoint (Command Code / OpenAI) or messages endpoint (Anthropic).</div>
+
+                        <div class="form-check mt-3">
+                            <input class="form-check-input" id="clearKey" type="checkbox" name="clearKey" value="1">
+                            <label class="form-check-label" for="clearKey">Remove saved API key</label>
+                        </div>
+
+                        <div class="d-flex flex-wrap gap-2 mt-3">
+                            <button class="btn btn-warning" type="submit">Save settings</button>
+                            <button class="btn btn-outline-light" id="testAiButton" type="button">Test connection</button>
+                        </div>
+                        <div class="form-text mt-2" id="testAiResult"></div>
+                    </form>
+                </div>
+            </div>
+            <div class="card bg-dark text-white border-secondary mt-3">
+                <div class="card-body text-start">
+                    <h5>Provider defaults</h5>
+                    <ul class="small mb-2">
+                        <li>Command Code: <code><%= providerDefaults.commandcode.model %></code></li>
+                        <li>OpenAI: <code><%= providerDefaults.openai.model %></code></li>
+                        <li>Anthropic: <code><%= providerDefaults.anthropic.model %></code></li>
+                    </ul>
+                    <p class="small text-muted mb-0">Saved credentials are stored outside the repository with restricted file permissions and are never shown in full. Environment variables are used when no saved key exists.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+    (function () {
+        var testButton = document.getElementById('testAiButton');
+        var testResult = document.getElementById('testAiResult');
+        var providerSelect = document.getElementById('aiProvider');
+        var modelInput = document.getElementById('aiModel');
+        var baseUrlInput = document.getElementById('aiBaseUrl');
+        if (!testButton || !testResult) {
+            return;
+        }
+
+        if (providerSelect && modelInput && baseUrlInput) {
+            providerSelect.addEventListener('change', function () {
+                var defaults = JSON.parse(providerSelect.getAttribute('data-defaults') || '{}');
+                var selected = defaults[providerSelect.value];
+                if (!selected) {
+                    return;
+                }
+                modelInput.value = selected.model;
+                baseUrlInput.value = selected.baseUrl;
+            });
+        }
+
+        testButton.addEventListener('click', function () {
+            testButton.disabled = true;
+            testResult.className = 'form-text mt-2 text-info';
+            testResult.textContent = 'Testing the current connection...';
+            fetch('/admin/test', { method: 'POST' })
+                .then(function (response) {
+                    return response.json();
+                })
+                .then(function (data) {
+                    testResult.textContent = data.message;
+                    testResult.className = 'form-text mt-2 ' + (data.ok ? 'text-success' : 'text-danger');
+                })
+                .catch(function () {
+                    testResult.textContent = 'The connection test failed.';
+                    testResult.className = 'form-text mt-2 text-danger';
+                })
+                .finally(function () {
+                    testButton.disabled = false;
+                });
+        });
+    })();
+</script>
+<%- include("footer") %>

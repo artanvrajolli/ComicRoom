@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const jobProcessor = require('../utils/jobProcessor');
 const UploadJob = require('../model/m_uploadJob');
 const { ALLOWED_UPLOAD_EXTENSIONS, isSupportedComicImageFile, listComicPages, rebuildComicImagePages, resolveComicAssets, sanitizeUploadFileName } = require('../utils/comicStorage');
+const { detectComicMetadata } = require('../utils/aiMetadata');
 
 function checkIfisOnline(req,res,next){
     if(typeof req.session.userData == 'undefined'){
@@ -289,6 +290,33 @@ const getUpdateComicDetails = async (req,res)=>{
     const comicAssets = await updateComicAssetMetadata(comic);
     const comicPages = listComicPages(comic.savedFolder);
     res.render("v_comicDetails",{  userData: req.session.userData,msg, comic, comicPages, viewerType: comicAssets.viewerType});
+}
+
+const getComicAiMetadata = async (req,res)=>{
+    try{
+        const comic = await findOwnedComic(req);
+        if(!comic){
+            res.status(404).json({ error: "Comic details could not be found." });
+            return;
+        }
+
+        const comicAssets = resolveComicAssets(comic.savedFolder);
+        if(!Array.isArray(comicAssets.images) || comicAssets.images.length === 0){
+            res.status(400).json({ error: "No pages are available for analysis." });
+            return;
+        }
+
+        const metadata = await detectComicMetadata(comic.savedFolder, comicAssets.images);
+        if(!metadata){
+            res.status(502).json({ error: "AI could not read this comic. Check the AI configuration and try again." });
+            return;
+        }
+
+        res.json(metadata);
+    }catch(error){
+        console.error('AI metadata request failed:', error.message);
+        res.status(500).json({ error: "AI metadata request failed." });
+    }
 }
 
 const UpdateComicDetails =async (req,res)=>{
@@ -630,6 +658,7 @@ module.exports = {
     showgallery_comic,
     checkIfisOnline,
     getUpdateComicDetails,
+    getComicAiMetadata,
     getUploadStatus,
     getUploadStatusAPI,
     getActiveJobs,

@@ -1,6 +1,12 @@
 <meta charset="UTF-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#111111">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ComicRoom">
+<link rel="manifest" href="/public/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/public/icons/apple-touch-icon.png">
 <link href="/public/css/bootstrap/css/bootstrap.min.css" rel="stylesheet" >
 <script src="/public/css/bootstrap/js/bootstrap.bundle.min.js"></script>
 <script src="/public/script/header.js"></script>
@@ -8,3 +14,10 @@
 <link rel="shortcut icon" type="image/jpg" href="/public/images/favicon.png"/>
 <link rel="stylesheet" href="/public/css/comic.css">
 <link rel="stylesheet" href="/public/css/css/all.css">
+<script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+            navigator.serviceWorker.register('/sw.js').catch(function () {});
+        });
+    }
+</script>

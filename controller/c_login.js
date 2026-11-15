@@ -3,20 +3,30 @@ const Users_table = require('../model/m_users')
 const bcrypt = require('bcrypt');
 
 const loginPost = (req,res)=>{
+    const identifier = typeof req.body.username === 'string' ? req.body.username.trim() : '';
+    const password = typeof req.body.password === 'string' ? req.body.password : '';
+
+    if (identifier === '' || password === '') {
+        req.session.msg = "Check username or password!";
+        res.redirect("/login");
+        return;
+    }
 
     Users_table.findOne({
         where:{
             [Op.or]:{
-                username: req.body.username,
-                email: req.body.username
+                username: identifier,
+                email: identifier
             }
         }
     }).then((data)=>{
 
-    if(bcrypt.compareSync(req.body.password,data.password)){
+    if(data && bcrypt.compareSync(password,data.password)){
         req.session.userData = data;
         req.session.msg = "";
-        res.redirect("/comic");
+        req.session.save(()=>{
+            res.redirect("/comic");
+        });
         return;
     }
 
