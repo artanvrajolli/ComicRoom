@@ -150,6 +150,33 @@ async function deleteComicCache(entry) {
     }
 }
 
+// Called when a comic is deleted: drop its offline copy, cover and page thumbnails.
+async function removeComic(data) {
+    const folder = String(data.comicFolder || '');
+    const comicId = String(data.comicId || '');
+    if (folder) {
+        const meta = await readOfflineMeta();
+        const removed = meta.filter(function (entry) { return entry.folder === folder; });
+        if (removed.length) {
+            await writeOfflineMeta(meta.filter(function (entry) { return entry.folder !== folder; }));
+        }
+        await deleteComicCache(removed[0] || { folder: folder });
+    }
+    if (/^[0-9]+$/.test(comicId)) {
+        const prefixes = ['/comic/cover/' + comicId, '/comic/page-thumb/' + comicId, '/comic/show/' + comicId];
+        for (const cacheName of [COVER_CACHE, THUMB_CACHE, PAGES_CACHE]) {
+            const cache = await caches.open(cacheName);
+            const requests = await cache.keys();
+            await Promise.all(requests
+                .filter(function (request) {
+                    const pathname = new URL(request.url).pathname;
+                    return prefixes.some(function (prefix) { return pathname === prefix || pathname.indexOf(prefix + '/') === 0; });
+                })
+                .map(function (request) { return cache.delete(request); }));
+        }
+    }
+}
+
 async function cacheComic(data, port) {
     const folder = String(data.comicFolder || '');
     const pageUrls = normalizeUrls(data.pageUrls);
@@ -492,6 +519,11 @@ self.addEventListener('message', function (event) {
 
     if (data.type === 'CACHE_COMIC') {
         event.waitUntil(cacheComic(data, port));
+        return;
+    }
+
+    if (data.type === 'REMOVE_COMIC') {
+        event.waitUntil(removeComic(data));
         return;
     }
 

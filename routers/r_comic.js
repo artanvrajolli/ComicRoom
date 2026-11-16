@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const {addComicPages, deleteComicPage, PostComicUpload ,UpdateComicDetails ,showcomic_id,showgallery_comic,serveComicCover, checkIfisOnline, getUpdateComicDetails, getComicAiMetadata, getUploadStatus, getUploadStatusAPI, moveComicPage, PostChunkedUpload, requireLoginJson, servePageThumbnail, getUploadsPage, dismissUploadJob, PostShareTarget} = require('../controller/c_comic')
+const {addComicPages, deleteComic, deleteComicPage, PostComicUpload ,UpdateComicDetails ,showcomic_id,showgallery_comic,serveComicCover, checkIfisOnline, getUpdateComicDetails, getComicAiMetadata, getUploadStatus, getUploadStatusAPI, moveComicPage, PostChunkedUpload, requireLoginJson, servePageThumbnail, getUploadsPage, dismissUploadJob, PostShareTarget} = require('../controller/c_comic')
 
 //Show gallery
 router.get("/",showgallery_comic)
@@ -41,6 +41,8 @@ router.post("/:folderID/:id_db/ai-metadata",checkIfisOnline,getComicAiMetadata)
 router.post("/:folderID/:id_db/pages/add",checkIfisOnline,addComicPages)
 router.post("/:folderID/:id_db/pages/delete",checkIfisOnline,deleteComicPage)
 router.post("/:folderID/:id_db/pages/move",checkIfisOnline,moveComicPage)
+// delete the whole comic (uploader or admin)
+router.post("/:folderID/:id_db/delete",checkIfisOnline,deleteComic)
 
 
 module.exports = router;

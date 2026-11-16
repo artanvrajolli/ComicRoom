@@ -239,6 +239,13 @@ async function removePageThumbs(comicId) {
     }
 }
 
+// Removes every cached cover and page thumbnail of a comic (disk and memory).
+// Called when the comic is deleted.
+async function removeComicThumbs(comicId) {
+    coverMemory.deleteByPrefix(`${comicId}-`);
+    await Promise.all([removeStaleThumbs(comicId, null), removePageThumbs(comicId)]);
+}
+
 // Renders a resized image in the isolated worker. Options: see utils/thumbWorker.js.
 function renderImage(options) {
     return new Promise((resolve, reject) => {
@@ -377,6 +384,7 @@ module.exports = {
     getThumbnail,
     getThumbFileName,
     prewarmAll,
+    removeComicThumbs,
     removePageThumbs,
     renderImage,
     resolveOriginalCoverPath,

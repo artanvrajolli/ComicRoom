@@ -7,7 +7,9 @@ const lastPage_table = require('../model/m_lastPage');
 const crypto = require('crypto');
 const jobProcessor = require('../utils/jobProcessor');
 const UploadJob = require('../model/m_uploadJob');
-const { ALLOWED_UPLOAD_EXTENSIONS, isSupportedComicImageFile, listComicPages, rebuildComicImagePages, resolveComicAssets, sanitizeUploadFileName } = require('../utils/comicStorage');
+const path = require('path');
+const { ALLOWED_UPLOAD_EXTENSIONS, getUploadFolderPath, invalidateComicAssets, isSupportedComicImageFile, listComicPages, rebuildComicImagePages, resolveComicAssets, sanitizeUploadFileName } = require('../utils/comicStorage');
+const { isAdmin } = require('../utils/admin');
 const { detectComicMetadata } = require('../utils/aiMetadata');
 const thumbnails = require('../utils/thumbnails');
 const { keywordWhere, normalizeKeyword } = require('../utils/queryHelpers');
@@ -125,17 +127,25 @@ function findMainFolderImages(fileOrDir){
     return "";
 }
 
-const findOwnedComic = async (req)=>{
+// The uploader and admins (ADMIN_USERNAMES) may edit and delete a comic.
+const canManageComic = (user, comic)=>{
+    if(!user || !comic){
+        return false;
+    }
+    return comic.uid === user.id || isAdmin(user);
+}
+
+const findManageableComic = async (req)=>{
     if(typeof req.session.userData == 'undefined'){
         return null;
     }
-    return comic_table.findOne({
+    const comic = await comic_table.findOne({
         where: {
             id: req.params.id_db,
-            uid: req.session.userData.id,
             savedFolder: req.params.folderID
         }
     });
+    return canManageComic(req.session.userData, comic) ? comic : null;
 }
 
 const updateComicAssetMetadata = async (comic)=>{
@@ -180,7 +190,7 @@ const updateComicDetailsRedirect = (comic)=>`/comic/${comic.savedFolder}/${comic
 
 const addComicPages = async (req,res)=>{
     try{
-        const comic = await findOwnedComic(req);
+        const comic = await findManageableComic(req);
         if(!comic){
             req.session.msg = "Comic details could not be found.";
             res.redirect("/comic");
@@ -237,7 +247,7 @@ const addComicPages = async (req,res)=>{
 
 const deleteComicPage = async (req,res)=>{
     try{
-        const comic = await findOwnedComic(req);
+        const comic = await findManageableComic(req);
         if(!comic){
             req.session.msg = "Comic details could not be found.";
             res.redirect("/comic");
@@ -274,7 +284,7 @@ const deleteComicPage = async (req,res)=>{
 
 const moveComicPage = async (req,res)=>{
     try{
-        const comic = await findOwnedComic(req);
+        const comic = await findManageableComic(req);
         if(!comic){
             req.session.msg = "Comic details could not be found.";
             res.redirect("/comic");
@@ -311,11 +321,63 @@ const moveComicPage = async (req,res)=>{
     }
 }
 
+// Upload folders are always a single "comic_<digits>" directory under public/uploads.
+const isSafeComicFolderName = (folder)=>/^comic_[0-9]+$/.test(String(folder || ''));
+
+// POST /comic/:folderID/:id_db/delete  (uploader or admin)
+const deleteComic = async (req,res)=>{
+    let comic = null;
+    try{
+        comic = await findManageableComic(req);
+        if(!comic){
+            req.session.msg = "Comic could not be found, or you are not allowed to delete it.";
+            res.redirect("/comic");
+            return;
+        }
+        if(String(req.body.confirm || '') !== 'delete'){
+            req.session.msg = "Please confirm before deleting the comic.";
+            res.redirect(updateComicDetailsRedirect(comic));
+            return;
+        }
+
+        const comicId = comic.id;
+        const savedFolder = comic.savedFolder;
+        const title = comic.title || 'Untitled comic';
+
+        await lastPage_table.destroy({ where: { comicId } });
+        await UploadJob.update({ comicId: null }, { where: { comicId } });
+        await comic_table.destroy({ where: { id: comicId } });
+
+        // Files last: if removing them fails, the comic is already gone from the app.
+        if(isSafeComicFolderName(savedFolder)){
+            const folderPath = getUploadFolderPath(savedFolder);
+            const uploadsRoot = path.join(process.cwd(), 'public', 'uploads') + path.sep;
+            if(folderPath.startsWith(uploadsRoot)){
+                await fs.promises.rm(folderPath, { recursive: true, force: true }).catch((error)=>{
+                    console.error(`Could not remove folder of deleted comic ${comicId}:`, error.message);
+                });
+            }
+        }else{
+            console.warn(`Deleted comic ${comicId} has an unexpected folder name, files kept: ${savedFolder}`);
+        }
+        invalidateComicAssets(savedFolder);
+        thumbnails.removeComicThumbs(comicId).catch(()=>{});
+
+        console.log(`Comic ${comicId} (${savedFolder}) deleted by user ${req.session.userData.id}${comic.uid === req.session.userData.id ? '' : ' (admin)'}`);
+        req.session.msg = `"${title}" was deleted.`;
+        res.redirect("/comic");
+    }catch(error){
+        console.error('Error deleting comic:', error);
+        req.session.msg = "Unable to delete the comic. Please try again.";
+        res.redirect(comic ? updateComicDetailsRedirect(comic) : "/comic");
+    }
+}
+
 const getUpdateComicDetails = async (req,res)=>{
     req.session.myComic = crypto.createHash('md5').update(req.params.folderID+"|"+req.params.id_db).digest("hex");
     var msg = req.session.msg;
     req.session.msg = "";
-    const comic = await findOwnedComic(req);
+    const comic = await findManageableComic(req);
     if(!comic){
         req.session.msg = "Comic details could not be found.";
         res.redirect("/comic");
@@ -323,12 +385,18 @@ const getUpdateComicDetails = async (req,res)=>{
     }
     const comicAssets = await updateComicAssetMetadata(comic);
     const comicPages = listComicPages(comic.savedFolder);
-    res.render("v_comicDetails",{  userData: req.session.userData,msg, comic, comicPages, viewerType: comicAssets.viewerType});
+    const isOwner = comic.uid === req.session.userData.id;
+    let ownerName = '';
+    if(!isOwner){
+        const owner = await require('../model/m_users').findByPk(comic.uid, { attributes: ['username'] }).catch(()=>null);
+        ownerName = owner ? owner.username : '';
+    }
+    res.render("v_comicDetails",{  userData: req.session.userData,msg, comic, comicPages, viewerType: comicAssets.viewerType, isOwner, ownerName});
 }
 
 const getComicAiMetadata = async (req,res)=>{
     try{
-        const comic = await findOwnedComic(req);
+        const comic = await findManageableComic(req);
         if(!comic){
             res.status(404).json({ error: "Comic details could not be found." });
             return;
@@ -367,6 +435,13 @@ const UpdateComicDetails =async (req,res)=>{
         return;
     }
 
+    const comic = await findManageableComic(req);
+    if(!comic){
+        req.session.msg = "Comic details could not be found.";
+        res.redirect("/comic");
+        return;
+    }
+
     const comicAssets = resolveComicAssets(comic_folder_id);
     if(comicAssets.viewerType !== 'image' && comicAssets.viewerType !== 'pdf'){
         req.session.msg = "No supported content was found for this upload.";
@@ -383,8 +458,7 @@ const UpdateComicDetails =async (req,res)=>{
         savedFolder:comic_folder_id
      }, {
      where: {
-         id:comic_id,
-         uid: req.session.userData.id
+         id:comic.id
      }
      });
 
@@ -414,7 +488,7 @@ const showcomic_id = async (req,res)=>{
         }else{
             var pageNumber = 0;
         }
-        const canEditComic = typeof req.session.userData != 'undefined' && req.session.userData.id === data.uid;
+        const canEditComic = canManageComic(req.session.userData, data);
         if(comicAssets.viewerType === 'pdf' && comicAssets.pdfFile){
             res.render("pdfView",{ userData:req.session.userData , savedFolder:data.savedFolder, pdfFile: comicAssets.pdfFile, comicTitle:data.title,comic_Field:data, canEditComic})
             return;
@@ -929,6 +1003,8 @@ const PostChunkedUpload = async (req, res) => {
 
 module.exports = {  
     addComicPages,
+    canManageComic,
+    deleteComic,
     deleteComicPage,
     PostComicUpload, 
     findMainFolderImages, 

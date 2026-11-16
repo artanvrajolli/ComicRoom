@@ -7,7 +7,7 @@
     var coverThumbSrc = comic.coverImage ? '/comic/cover/' + comic.id + '?v=' + encodeURIComponent(comic.coverImage) : '';
     var pageCount = viewerType === 'image' ? comicPages.length : (comic.totalPages || 0);
     var flashText = (typeof msg != 'undefined' && msg) ? String(msg) : '';
-    var flashIsSuccess = /success|added|moved|removed|saved/i.test(flashText) && !/unable|invalid|could not|must|only/i.test(flashText);
+    var flashIsSuccess = /success|added|moved|removed|saved|deleted/i.test(flashText) && !/unable|invalid|could not|must|only/i.test(flashText);
     var thumbUrl = function (relativePath) { return '/comic/page-thumb/' + encodeURIComponent(comic.id) + '?file=' + encodeURIComponent(relativePath); };
 %>
 <style>
@@ -84,6 +84,16 @@
 /* Collapsible sections (phones/tablets only; always open on desktop) */
 .cd-section-head { display: flex; justify-content: space-between; align-items: center; gap: .5rem; margin-bottom: 1rem; }
 .cd-section-head .cd-section-title { margin: 0; }
+.cd-admin-note { margin-top: .35rem; font-size: .85rem; color: var(--cr-accent, #f5a524); }
+.cd-admin-note i { margin-right: .3rem; }
+.cr-card.cd-danger { border-color: color-mix(in srgb, var(--cr-danger, #f87171) 40%, var(--cr-border, #2a2a33)); }
+.cd-danger .btn { min-height: 44px; }
+.cd-danger-confirm { margin-top: .25rem; padding: .85rem 1rem; border-radius: var(--cr-radius-sm, 8px); background: color-mix(in srgb, var(--cr-danger, #f87171) 10%, transparent); }
+@media (max-width: 575.98px) {
+    .cd-danger > .btn { width: 100%; }
+    .cd-danger-confirm .cd-sheet-confirm-actions { flex-direction: column-reverse; align-items: stretch; }
+    .cd-danger-confirm .cd-sheet-confirm-actions .btn { width: 100%; }
+}
 .cd-collapse-btn {
     display: none;
     width: 100%;
@@ -318,6 +328,9 @@
             <a href="/comic" class="cd-back"><i class="fas fa-arrow-left" aria-hidden="true"></i> Gallery</a>
             <h1 class="cr-page-title h3 mb-0">Edit comic</h1>
             <div class="cd-muted cd-subtitle"><%= comic.title || 'Untitled comic' %></div>
+            <% if (typeof isOwner !== 'undefined' && !isOwner) { %>
+            <div class="cd-admin-note"><i class="fas fa-user-shield" aria-hidden="true"></i> Admin access. Uploaded by <%= ownerName || 'another user' %>.</div>
+            <% } %>
         </div>
         <a class="btn btn-quiet" href="/comic/show/<%= comic.id %>"><i class="fas fa-book-open" aria-hidden="true"></i> Open comic</a>
     </div>
@@ -451,6 +464,23 @@
                 <div class="cr-empty-state"><p class="mb-0">This comic has no pages yet. Add images above.</p></div>
             <% } %>
         <% } %>
+        </div>
+    </section>
+
+    <!-- Delete the whole comic (uploader or admin) -->
+    <section class="cr-card mt-3 mt-lg-4 cd-danger" aria-labelledby="dangerHeading">
+        <h2 id="dangerHeading" class="cd-section-title">Delete comic</h2>
+        <p class="cd-muted mb-3">Removes the comic, all <%= pageCount %> page<%= pageCount === 1 ? '' : 's' %> and everyone's reading progress for it<% if (typeof isOwner !== 'undefined' && !isOwner) { %>, including for <%= ownerName || 'the uploader' %><% } %>. This cannot be undone.</p>
+        <button type="button" class="btn btn-outline-danger" id="deleteComicStart" aria-expanded="false" aria-controls="deleteComicConfirm"><i class="fas fa-trash-alt" aria-hidden="true"></i> Delete comic…</button>
+        <div class="cd-danger-confirm" id="deleteComicConfirm" hidden>
+            <p class="mb-2" id="deleteComicQuestion">Delete <strong><%= comic.title || 'Untitled comic' %></strong> permanently?</p>
+            <form method="post" action="<%= basePath %>/delete" id="deleteComicForm" data-busy-text="Deleting..." data-folder="<%= comic.savedFolder %>" aria-describedby="deleteComicQuestion">
+                <input type="hidden" name="confirm" value="delete">
+                <div class="cd-sheet-confirm-actions">
+                    <button type="button" class="btn btn-quiet" id="deleteComicCancel">Cancel</button>
+                    <button type="submit" class="btn btn-danger" id="deleteComicButton"><i class="fas fa-trash-alt" aria-hidden="true"></i> Delete permanently</button>
+                </div>
+            </form>
         </div>
     </section>
 
@@ -621,6 +651,26 @@
         });
     }
 
+    // ---------- delete comic: two-step confirm ----------
+    (function () {
+        var start = document.getElementById('deleteComicStart');
+        var box = document.getElementById('deleteComicConfirm');
+        var cancel = document.getElementById('deleteComicCancel');
+        if (!start || !box || !cancel) return;
+        start.addEventListener('click', function () {
+            box.hidden = false;
+            start.hidden = true;
+            start.setAttribute('aria-expanded', 'true');
+            document.getElementById('deleteComicButton').focus();
+        });
+        cancel.addEventListener('click', function () {
+            box.hidden = true;
+            start.hidden = false;
+            start.setAttribute('aria-expanded', 'false');
+            start.focus();
+        });
+    })();
+
     var submitting = false;
     function markSubmitting(form, submitter) {
         submitting = true;
@@ -651,6 +701,16 @@
             }
             if (form.id === 'sheetMoveToForm' && !validateMoveTo()) {
                 event.preventDefault();
+                return;
+            }
+            if (form.id === 'deleteComicForm') {
+                // Drop any copy saved for offline reading; the SW handles it after we navigate away.
+                try {
+                    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+                        navigator.serviceWorker.controller.postMessage({ type: 'REMOVE_COMIC', comicFolder: form.getAttribute('data-folder'), comicId: comicId });
+                    }
+                } catch (e) {}
+                markSubmitting(form, event.submitter);
                 return;
             }
             if (form.id !== 'detailsForm') {
