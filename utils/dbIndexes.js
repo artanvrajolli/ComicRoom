@@ -58,8 +58,58 @@ async function ensureLastPageIndex() {
     lastPageUniqueIndex = true;
 }
 
+// db.sync() without alter never widens existing columns, so tables created by
+// older versions can be narrower than the models (e.g. comics.coverImage was
+// VARCHAR(100), which rejected long page paths with "Data too long").
+// Widen any VARCHAR column that is shorter than its model. Never narrows.
+function syncedModels() {
+    return [
+        require('../model/m_comic'),
+        require('../model/m_uploadJob'),
+        require('../model/m_users'),
+        require('../model/m_lastPage')
+    ];
+}
+
+function modelStringLength(definition) {
+    const type = definition && definition.type;
+    if (!type || type.key !== 'STRING') return 0;
+    return Number(type._length || (type.options && type.options.length) || 255);
+}
+
+async function ensureColumnWidths() {
+    for (const model of syncedModels()) {
+        const table = model.getTableName();
+        let columns;
+        try {
+            [columns] = await db.query(
+                'SELECT COLUMN_NAME AS name, DATA_TYPE AS type, CHARACTER_MAXIMUM_LENGTH AS len, IS_NULLABLE AS nullable, COLUMN_DEFAULT AS def FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
+                { replacements: [table] }
+            );
+        } catch (err) {
+            console.error(`Could not read columns of ${table}:`, err.message);
+            continue;
+        }
+        const byName = new Map(columns.map(column => [column.name, column]));
+        for (const [attribute, definition] of Object.entries(model.rawAttributes)) {
+            const wanted = modelStringLength(definition);
+            const column = byName.get(definition.field || attribute);
+            if (!wanted || !column || column.type !== 'varchar' || Number(column.len) >= wanted) continue;
+            const nullability = column.nullable === 'YES' ? 'NULL' : 'NOT NULL';
+            const defaultClause = column.def === null || column.def === undefined ? '' : ' DEFAULT ' + db.escape(column.def);
+            try {
+                await db.query(`ALTER TABLE \`${table}\` MODIFY \`${column.name}\` VARCHAR(${wanted}) ${nullability}${defaultClause}`);
+                console.log(`Widened ${table}.${column.name} from VARCHAR(${column.len}) to VARCHAR(${wanted})`);
+            } catch (err) {
+                console.error(`Could not widen ${table}.${column.name}:`, err.message);
+            }
+        }
+    }
+}
+
 // Never throws: a missing index only costs performance.
 async function ensureIndexes() {
+    await ensureColumnWidths();
     try {
         await ensureLastPageIndex();
     } catch (err) {
@@ -80,6 +130,7 @@ function hasLastPageUniqueIndex() {
 }
 
 module.exports = {
+    ensureColumnWidths,
     ensureIndexes,
     hasLastPageUniqueIndex
 };

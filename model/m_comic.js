@@ -12,7 +12,9 @@ const comic_table = db.define("comics",{
         allowNull:true
     },
     coverImage:{
-        type:Sequelize.STRING(100),
+        // Relative path of the cover page inside the comic folder; archives
+        // often nest pages in long folder names.
+        type:Sequelize.STRING(1000),
         allowNull:true
     },
     description:{
