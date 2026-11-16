@@ -15,7 +15,8 @@ const PROVIDER_DEFAULTS = {
         baseUrl: 'https://api.openai.com/v1/chat/completions'
     },
     anthropic: {
-        model: 'claude-sonnet-4-6',
+        // Cheapest current Claude model; reads covers/credits well enough for metadata.
+        model: 'claude-haiku-5-5',
         baseUrl: 'https://api.anthropic.com/v1/messages'
     }
 };

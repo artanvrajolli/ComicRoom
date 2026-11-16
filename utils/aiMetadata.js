@@ -215,10 +215,11 @@ function buildRequest(settings, text, images, maxTokens) {
                 'x-api-key': settings.apiKey,
                 'anthropic-version': '2023-06-01'
             },
+            // No temperature: current Claude models (Haiku 5.5 and newer) reject
+            // non-default sampling values with a 400.
             body: {
                 model: settings.model,
                 max_tokens: maxTokens,
-                temperature: 0.1,
                 messages: [{ role: 'user', content: content }]
             }
         };
