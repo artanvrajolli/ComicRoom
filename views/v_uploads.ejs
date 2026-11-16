@@ -126,6 +126,11 @@
 .ul-bundle-link:hover { color: var(--cr-accent, #f5a524); }
 .ul-bundle-link > i { flex: 0 0 auto; color: var(--cr-muted, #a6a6b0); }
 .ul-bundle-link > span { min-width: 0; }
+.ul-sending { margin-bottom: 1.5rem; }
+.ul-section-title { font-size: .8rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--cr-muted, #a6a6b0); margin: 0 0 .6rem; }
+.ul-status.is-sending { color: var(--cr-accent, #f5a524); border-color: color-mix(in srgb, var(--cr-accent, #f5a524) 55%, transparent); background: var(--cr-accent-soft, rgba(245, 165, 36, .14)); }
+.ul-status.is-paused { color: var(--cr-text, #ededf0); }
+.is-sending .ul-dot { animation: ul-pulse 1.4s ease-in-out infinite; }
 .ul-actions { display: flex; gap: .5rem; margin-top: .85rem; }
 .ul-actions .btn:not(.btn-dismiss) { flex: 1 1 0; min-width: 0; white-space: nowrap; padding-left: .6rem; padding-right: .6rem; }
 @media (max-width: 399.98px) {
@@ -166,6 +171,13 @@
     <% } %>
 
     <div id="dismissError" class="alert alert-danger ul-alert" role="alert" hidden></div>
+
+    <!-- Files this browser is still sending (filled by public/script/uploadManager.js events) -->
+    <section id="sendingSection" class="ul-sending" aria-labelledby="sendingHeading" hidden>
+        <h2 class="ul-section-title" id="sendingHeading">Sending from this device</h2>
+        <ul class="ul-list" id="sendingList"></ul>
+        <p class="ul-note ul-muted">You can keep using ComicRoom while this runs. It shows up below once the server has the whole file.</p>
+    </section>
 
     <ul class="ul-list" id="jobList" aria-label="Your uploads" <%= jobList.length ? '' : 'hidden' %>>
         <% jobList.forEach(function (job) {
@@ -245,6 +257,8 @@
 <script>
 (function () {
     var list = document.getElementById('jobList');
+    var sendingSection = document.getElementById('sendingSection');
+    var sendingList = document.getElementById('sendingList');
     var emptyState = document.getElementById('emptyState');
     var pollNote = document.getElementById('pollNote');
     var liveRegion = document.getElementById('liveRegion');
@@ -419,9 +433,10 @@
 
     function syncEmpty() {
         var count = cards().length;
+        var sending = sendingList.children.length;
         list.hidden = count === 0;
-        emptyState.hidden = count !== 0;
-        document.getElementById('headUploadButton').hidden = count === 0;
+        emptyState.hidden = count !== 0 || sending !== 0;
+        document.getElementById('headUploadButton').hidden = count === 0 && sending === 0;
         pollNote.hidden = !hasActive();
     }
 
@@ -476,6 +491,108 @@
         syncEmpty();
         return changed;
     }
+
+    // ---------- files still being sent from this browser ----------
+    function formatBytes(bytes) {
+        var units = ['B', 'KB', 'MB', 'GB'];
+        var i = 0, v = bytes || 0;
+        while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+        return v.toFixed(i === 0 ? 0 : (v < 10 ? 1 : 0)) + ' ' + units[i];
+    }
+    var SENDING_LABELS = { queued: 'Sending', sending: 'Sending', waiting: 'Offline', error: 'Paused', 'needs-file': 'Paused', login: 'Paused' };
+    function sendingCard(u) {
+        var li = el('li', 'ul-job cr-card');
+        li.setAttribute('data-upload-id', u.id);
+        var top = el('div', 'ul-job-top');
+        var ic = el('span', 'ul-job-icon'); ic.setAttribute('aria-hidden', 'true');
+        ic.appendChild(icon(/\.pdf$/i.test(u.name) ? 'fa-file-pdf' : 'fa-file-archive'));
+        top.appendChild(ic);
+        var main = el('div', 'ul-job-main');
+        var name = el('h3', 'ul-job-name', u.name); name.title = u.name;
+        main.appendChild(name);
+        var meta = el('div', 'ul-job-meta');
+        var ext = String(u.name).toLowerCase().split('.').pop();
+        if (ext && ext !== u.name.toLowerCase()) meta.appendChild(el('span', 'ul-chip', ext));
+        meta.appendChild(el('span', 'ul-sent', formatBytes(u.sent) + ' of ' + formatBytes(u.size)));
+        main.appendChild(meta);
+        top.appendChild(main);
+        var active = u.state === 'queued' || u.state === 'sending' || u.state === 'waiting';
+        var chip = el('span', 'ul-chip ul-status ' + (active ? 'is-sending' : 'is-paused'));
+        var dot = el('span', 'ul-dot'); dot.setAttribute('aria-hidden', 'true');
+        chip.appendChild(dot);
+        chip.appendChild(document.createTextNode(SENDING_LABELS[u.state] || 'Sending'));
+        top.appendChild(chip);
+        li.appendChild(top);
+
+        var percent = u.size ? Math.floor((u.sent / u.size) * 100) : 0;
+        var pr = el('div', 'ul-progress');
+        var row = el('div', 'ul-progress-row');
+        row.appendChild(el('span', null, u.state === 'waiting' ? 'Waiting for a connection' : (active ? (u.sent >= u.size ? 'Finishing on the server' : 'Sending the file') : 'Stopped')));
+        row.appendChild(el('span', 'ul-pct', percent + '%'));
+        pr.appendChild(row);
+        var bar = el('div', 'ul-bar');
+        bar.setAttribute('role', 'progressbar');
+        bar.setAttribute('aria-label', 'Sending ' + u.name);
+        bar.setAttribute('aria-valuemin', '0'); bar.setAttribute('aria-valuemax', '100'); bar.setAttribute('aria-valuenow', String(percent));
+        var fill = el('span'); fill.style.width = percent + '%';
+        bar.appendChild(fill);
+        pr.appendChild(bar);
+        li.appendChild(pr);
+
+        if (!active) {
+            var why = u.state === 'needs-file'
+                ? 'The browser no longer has access to this file. Choose the same file again on the Upload page to continue from ' + percent + '%.'
+                : (u.error || 'The upload stopped.');
+            li.appendChild(el('p', 'ul-error', why));
+        }
+        var actions = el('div', 'ul-actions');
+        if (u.state === 'needs-file') {
+            var pick = el('a', 'btn btn-accent'); pick.href = '/comic/upload';
+            pick.appendChild(icon('fa-folder-open')); pick.appendChild(document.createTextNode(' Choose file'));
+            actions.appendChild(pick);
+        } else if (!active) {
+            var resume = el('button', 'btn btn-accent'); resume.type = 'button';
+            resume.appendChild(icon('fa-redo')); resume.appendChild(document.createTextNode(' Resume'));
+            resume.addEventListener('click', function () { window.CRUploads.resume(u.id); });
+            actions.appendChild(resume);
+        }
+        var cancel = el('button', 'btn btn-quiet'); cancel.type = 'button';
+        cancel.appendChild(icon('fa-times')); cancel.appendChild(document.createTextNode(' Cancel'));
+        cancel.setAttribute('aria-label', 'Cancel sending ' + u.name);
+        cancel.addEventListener('click', function () {
+            if (window.confirm('Stop sending "' + u.name + '"? The parts sent so far are deleted.')) window.CRUploads.cancel(u.id);
+        });
+        actions.appendChild(cancel);
+        li.appendChild(actions);
+        return li;
+    }
+    var lastSendingKey = '';
+    function renderSending(uploads) {
+        var pending = (uploads || []).filter(function (u) { return u.state !== 'done'; });
+        // Rebuild only when something visible changed (keeps button focus stable)
+        var key = pending.map(function (u) { return u.id + ':' + u.state + ':' + Math.floor((u.sent / (u.size || 1)) * 100) + ':' + (u.error || ''); }).join('|');
+        if (key === lastSendingKey) return;
+        var focusedId = document.activeElement && document.activeElement.closest && document.activeElement.closest('[data-upload-id]');
+        focusedId = focusedId ? focusedId.getAttribute('data-upload-id') : null;
+        lastSendingKey = key;
+        sendingList.textContent = '';
+        pending.forEach(function (u) { sendingList.appendChild(sendingCard(u)); });
+        sendingSection.hidden = pending.length === 0;
+        if (focusedId) {
+            var again = sendingList.querySelector('[data-upload-id="' + focusedId + '"] .btn');
+            if (again) again.focus();
+        }
+        syncEmpty();
+    }
+    document.addEventListener('cr:upload-progress', function (event) {
+        renderSending(event.detail && event.detail.uploads);
+    });
+    // Sent: the server now has a job for it, so fetch the list right away
+    document.addEventListener('cr:upload-done', function () {
+        delay = MIN_DELAY;
+        setTimeout(poll, 300);
+    });
+    if (window.CRUploads) renderSending(window.CRUploads.list());
 
     // ---------- polling ----------
     function stop() {
