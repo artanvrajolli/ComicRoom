@@ -159,6 +159,7 @@
             form.append('totalChunks', record.totalChunks);
             form.append('fileName', record.name);
             form.append('uploadId', record.id);
+            if (record.isPrivate) form.append('private', '1');
 
             var xhr = new XMLHttpRequest();
             currentXhr = xhr;
@@ -374,9 +375,11 @@
         return 'upload_' + Date.now() + '_' + Math.random().toString(36).slice(2, 11);
     }
 
-    async function start(file) {
+    // options.private: the comics made from this file are visible to the uploader only
+    async function start(file, options) {
         var record = {
             id: newId(), name: file.name, size: file.size, lastModified: file.lastModified || 0,
+            isPrivate: !!(options && options.private),
             chunkSize: CHUNK_SIZE, totalChunks: Math.max(1, Math.ceil(file.size / CHUNK_SIZE)),
             createdAt: Date.now(), persisted: false, file: file
         };

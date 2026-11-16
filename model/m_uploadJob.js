@@ -41,6 +41,12 @@ const UploadJob = db.define("upload_jobs", {
         type: Sequelize.TEXT,
         allowNull: true
     },
+    // The uploader asked for the resulting comics to be private.
+    makePrivate: {
+        type: Sequelize.BOOLEAN,
+        allowNull: true,
+        defaultValue: false
+    },
     errorMessage: {
         type: Sequelize.TEXT,
         allowNull: true

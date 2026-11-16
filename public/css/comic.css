@@ -1102,6 +1102,23 @@ body.cr-sheet-open {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
   transition: transform var(--cr-ease), box-shadow var(--cr-ease), border-color var(--cr-ease);
 }
+/* Lock on covers of private comics (only their uploader sees them) */
+.cr-private-badge {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
+  font-size: 0.8rem;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
 .cr-cover img {
   display: block;
   width: 100%;

@@ -84,6 +84,15 @@
 /* Collapsible sections (phones/tablets only; always open on desktop) */
 .cd-section-head { display: flex; justify-content: space-between; align-items: center; gap: .5rem; margin-bottom: 1rem; }
 .cd-section-head .cd-section-title { margin: 0; }
+/* Privacy switch */
+.cd-privacy { margin-top: 1.5rem; padding: .85rem 1rem; border: 1px solid var(--cr-border, #34343b); border-radius: var(--cr-radius-sm, 8px); background: var(--cr-surface-2, #26262b); }
+.cd-privacy .form-check { display: flex; align-items: center; gap: .65rem; padding-left: 0; min-height: 44px; }
+.cd-privacy .form-check-input { float: none; margin: 0; width: 2.6em; height: 1.4em; flex: none; cursor: pointer; background-color: var(--cr-surface, #1b1b1f); border-color: var(--cr-muted, #8b8b95); }
+.cd-privacy .form-check-input:checked { background-color: var(--cr-accent, #f5a524); border-color: var(--cr-accent, #f5a524); }
+.cd-privacy .form-check-input:focus { box-shadow: 0 0 0 .2rem color-mix(in srgb, var(--cr-accent, #f5a524) 40%, transparent); }
+.cd-privacy .form-check-label { font-weight: 600; cursor: pointer; }
+.cd-privacy .form-text { margin: .1rem 0 0; }
+.cd-private-pill { display: inline-flex; align-items: center; gap: .3rem; margin-top: .35rem; padding: .1rem .55rem; border-radius: 999px; font-size: .78rem; font-weight: 600; background: var(--cr-surface-2, #26262b); border: 1px solid var(--cr-border, #34343b); color: var(--cr-text, #ededf0); }
 .cd-admin-note { margin-top: .35rem; font-size: .85rem; color: var(--cr-accent, #f5a524); }
 .cd-admin-note i { margin-right: .3rem; }
 .cr-card.cd-danger { border-color: color-mix(in srgb, var(--cr-danger, #f87171) 40%, var(--cr-border, #2a2a33)); }
@@ -328,6 +337,9 @@
             <a href="/comic" class="cd-back"><i class="fas fa-arrow-left" aria-hidden="true"></i> Gallery</a>
             <h1 class="cr-page-title h3 mb-0">Edit comic</h1>
             <div class="cd-muted cd-subtitle"><%= comic.title || 'Untitled comic' %></div>
+            <% if (comic.isPrivate) { %>
+            <div class="cd-private-pill"><i class="fas fa-lock" aria-hidden="true"></i> Private</div>
+            <% } %>
             <% if (typeof isOwner !== 'undefined' && !isOwner) { %>
             <div class="cd-admin-note"><i class="fas fa-user-shield" aria-hidden="true"></i> Admin access. Uploaded by <%= ownerName || 'another user' %>.</div>
             <% } %>
@@ -372,6 +384,17 @@
                         <div id="aiFillStatus" class="form-text text-info m-0" role="status" aria-live="polite"></div>
                     </div>
                     <p class="form-text mb-0 mt-1">AI reads the first pages and fills the fields above. Nothing is saved until you press Save.</p>
+
+                    <% if (typeof isOwner === 'undefined' || isOwner) { %>
+                    <input type="hidden" name="privacyField" value="1">
+                    <div class="cd-privacy">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" role="switch" name="isPrivate" value="1" id="privateSwitch" aria-describedby="privateHelp"<% if (comic.isPrivate) { %> checked<% } %>>
+                            <label class="form-check-label" for="privateSwitch"><i class="fas fa-lock" aria-hidden="true"></i> Private</label>
+                        </div>
+                        <p id="privateHelp" class="form-text">Only you can see and read this comic. It is hidden from the gallery, search and other people's reading lists.</p>
+                    </div>
+                    <% } %>
 
                     <button class="btn btn-accent w-100 mt-4" type="submit" name="submit" value="Save Details" id="saveDetailsButton">
                         <i class="fas fa-save" aria-hidden="true"></i> <span class="cd-btn-label">Save details</span>
@@ -962,8 +985,8 @@
     if (detailsForm) {
         detailsForm.addEventListener('input', function () {
             // Dirty only while something differs from what was loaded
-            isDirty = Array.prototype.some.call(detailsForm.querySelectorAll('input[type="text"], textarea'), function (f) {
-                return f.value !== f.defaultValue;
+            isDirty = Array.prototype.some.call(detailsForm.querySelectorAll('input[type="text"], input[type="checkbox"], textarea'), function (f) {
+                return f.type === 'checkbox' ? f.checked !== f.defaultChecked : f.value !== f.defaultValue;
             });
             updateSaveBar();
         });

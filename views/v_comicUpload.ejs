@@ -21,6 +21,11 @@
     padding-bottom: var(--up-bar-space, 0px);
 }
 .up-muted { color: var(--cr-muted, #a6a6b0); }
+.up-private { display: grid; grid-template-columns: auto 1fr; column-gap: .65rem; align-items: center; padding-left: 0; min-height: 44px; }
+.up-private .form-check-input { float: none; margin: 0; width: 1.25em; height: 1.25em; cursor: pointer; background-color: var(--cr-surface, #1b1b1f); border-color: var(--cr-muted, #8b8b95); }
+.up-private .form-check-input:checked { background-color: var(--cr-accent, #f5a524); border-color: var(--cr-accent, #f5a524); }
+.up-private .form-check-label { font-weight: 600; cursor: pointer; }
+.up-private .form-text { grid-column: 2; margin: .1rem 0 0; }
 .up-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: .5rem 1rem; margin-bottom: 1.25rem; }
 .up-head p { margin: .25rem 0 0; }
 .up-head-link { min-height: 44px; display: inline-flex; align-items: center; gap: .4rem; font-weight: 600; color: var(--cr-accent, #f5a524); text-decoration: none; }
@@ -214,6 +219,12 @@
                 <button type="button" id="clearFileButton" class="btn btn-outline-light up-icon-btn" aria-label="Remove selected file">
                     <i class="fas fa-times" aria-hidden="true"></i>
                 </button>
+            </div>
+
+            <div class="up-private form-check mt-3">
+                <input class="form-check-input" type="checkbox" name="private" value="1" id="privateUpload" aria-describedby="privateUploadHelp">
+                <label class="form-check-label" for="privateUpload"><i class="fas fa-lock" aria-hidden="true"></i> Keep private</label>
+                <div id="privateUploadHelp" class="form-text up-muted">Only you will see and read it. You can change this later on the comic's edit page.</div>
             </div>
 
             <div id="errorBox" class="alert alert-danger up-alert mt-3 d-flex gap-2 align-items-start" role="alert" hidden>
@@ -437,6 +448,8 @@
         dropzone.classList.toggle('is-disabled', active);
         dropzone.setAttribute('aria-disabled', active ? 'true' : 'false');
         clearFileButton.disabled = active;
+        var privateBox = document.getElementById('privateUpload');
+        if (privateBox) privateBox.disabled = active; // fixed once sending starts
         uploadButton.disabled = active || !selectedFile;
         uploadButton.querySelector('span').textContent = active ? 'Uploading...' : 'Upload';
         cancelButton.hidden = !active;
@@ -603,11 +616,16 @@
         cancelRequested = false;
         resetSpeed();
         showSending(file.name, 0, file.size);
-        window.CRUploads.start(file).then(function (id) {
+        window.CRUploads.start(file, { private: isPrivateUpload() }).then(function (id) {
             follow(id, findUpload(id));
         });
     }
     window.uploadFile = uploadFile;
+
+    function isPrivateUpload() {
+        var box = document.getElementById('privateUpload');
+        return !!(box && box.checked);
+    }
 
     function findUpload(id) {
         if (!window.CRUploads) return null;
@@ -788,6 +806,7 @@
 
         var formdata = new FormData();
         formdata.append("fileComicUpload", file);
+        if (isPrivateUpload()) formdata.append("private", "1");
         var ajax = new XMLHttpRequest();
         currentXhr = ajax;
         ajax.upload.addEventListener("progress", function (event) {

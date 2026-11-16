@@ -30,6 +30,12 @@ const comic_table = db.define("comics",{
     },
     uid:{
         type:Sequelize.INTEGER
+    },
+    // Private comics are visible to their uploader only (NULL = public).
+    isPrivate:{
+        type:Sequelize.BOOLEAN,
+        allowNull:true,
+        defaultValue:false
     }
 })
 

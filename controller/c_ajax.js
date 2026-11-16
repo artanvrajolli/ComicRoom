@@ -1,11 +1,12 @@
 const lastPage_table = require('../model/m_lastPage');
 const comic_table = require("../model/m_comic");
 const Op = require('sequelize').Op
+const { visibleComicsWhere } = require('../utils/comicAccess');
 const { keywordWhere, normalizeKeyword, parseOffset } = require('../utils/queryHelpers');
 const dbIndexes = require('../utils/dbIndexes');
 
 const PAGE_SIZE = 12;
-const COMIC_CARD_ATTRIBUTES = ["id", "title", "author", "coverImage", "totalPages", "savedFolder"];
+const COMIC_CARD_ATTRIBUTES = ["id", "title", "author", "coverImage", "totalPages", "savedFolder", "isPrivate"];
 const LAST_PAGE_ATTRIBUTES = ["id", "pageNumber", "comicId", "userId"];
 
 async function updateOrCreate(req) {
@@ -70,7 +71,7 @@ const fetchComic = (req, res) => {
                     coverImage: ""
                 }
             },
-            ...keywordWhere(searchKeywords)
+            [Op.and]: [visibleComicsWhere(req.session.userData), keywordWhere(searchKeywords)]
         },
         order: [
             ['id', 'DESC'],
@@ -98,7 +99,13 @@ const fetchReadingList = (req, res) => {
         include: {
             model: comic_table,
             attributes: COMIC_CARD_ATTRIBUTES,
-            where: searchKeywords ? keywordWhere(searchKeywords) : { title: { [Op.ne]: null } }
+            // comics made private by someone else drop out of the list
+            where: {
+                [Op.and]: [
+                    searchKeywords ? keywordWhere(searchKeywords) : { title: { [Op.ne]: null } },
+                    visibleComicsWhere(req.session.userData)
+                ]
+            }
         },
         where: {
             userId: req.session.userData.id,

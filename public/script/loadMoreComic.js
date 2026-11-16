@@ -55,6 +55,15 @@
         img.loading = 'lazy';
         img.decoding = 'async';
         cover.appendChild(img);
+        if (comic.isPrivate) {
+            var badge = el('span', 'cr-private-badge');
+            badge.title = 'Private: only you can see it';
+            var icon = el('i', 'fas fa-lock');
+            icon.setAttribute('aria-hidden', 'true');
+            badge.appendChild(icon);
+            badge.appendChild(el('span', 'visually-hidden', 'Private'));
+            cover.appendChild(badge);
+        }
         link.appendChild(cover);
 
         var meta = el('div', 'cr-comic-meta');

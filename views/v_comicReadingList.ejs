@@ -60,7 +60,7 @@
         <li data-id="<%= comic.id %>">
           <a class="cr-comic-card cr-reading-card" href="/comic/show/<%= encodeURIComponent(comic.id) %>">
             <div class="cr-cover">
-              <img src="/comic/cover/<%= encodeURIComponent(comic.id) %><% if (comic.coverImage) { %>?v=<%= encodeURIComponent(comic.coverImage) %><% } %>" alt="" width="400" height="600" decoding="async"<% if (i >= EAGER_COUNT) { %> loading="lazy"<% } else if (i === 0) { %> fetchpriority="high"<% } %>>
+              <img src="/comic/cover/<%= encodeURIComponent(comic.id) %><% if (comic.coverImage) { %>?v=<%= encodeURIComponent(comic.coverImage) %><% } %>" alt="" width="400" height="600" decoding="async"<% if (i >= EAGER_COUNT) { %> loading="lazy"<% } else if (i === 0) { %> fetchpriority="high"<% } %>><% if (comic.isPrivate) { %><span class="cr-private-badge" title="Private: only you can see it"><i class="fas fa-lock" aria-hidden="true"></i><span class="visually-hidden">Private</span></span><% } %>
             </div>
             <div class="cr-comic-meta">
               <h2 class="cr-comic-title"><%= comic.title %></h2>
@@ -91,7 +91,7 @@
       <button id="loadMore" type="button" class="btn cr-btn-ghost"<% if (rows.length < 12) { %> hidden<% } %>>Load more</button>
     </div>
     <div id="feedSentinel" class="cr-sentinel" aria-hidden="true"></div>
-    <script src="/public/script/loadMoreComic.js?v=4" defer></script>
+    <script src="/public/script/loadMoreComic.js?v=5" defer></script>
   <% } %>
 </div>
 <%- include("footer") %>

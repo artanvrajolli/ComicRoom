@@ -1,5 +1,4 @@
 const express = require('express')
-const session = require('express-session')
 const fileUpload = require('express-fileupload')
 const compression = require('compression')
 const app = express();
@@ -9,7 +8,8 @@ const fs = require('fs');
 const path = require('path');
 const jobProcessor = require('./utils/jobProcessor');
 const { isAdmin } = require('./utils/admin');
-const SequelizeStore = require('connect-session-sequelize')(session.Store);
+const { sessionStore, sessionMiddleware, loadSessionUser } = require('./config/session');
+const { privateFolderOwner, refreshPrivateFolders } = require('./utils/comicAccess');
 const dbIndexes = require('./utils/dbIndexes');
 const thumbnails = require('./utils/thumbnails');
 const comic_table = require('./model/m_comic');
@@ -44,13 +44,43 @@ app.get(['/comic/page-thumb/:id', '/page-thumb/:id'], servePageThumbnail);
 // upload temp files are never public
 app.use('/public/tmp', (req, res) => res.status(404).end());
 
+// Pages of a private comic are only sent to its uploader. Other folders skip
+// the session lookup entirely.
+app.use('/public/uploads', async (req, res, next) => {
+    let topFolder = '';
+    try {
+        topFolder = decodeURIComponent(req.path.split('/')[1] || '');
+    } catch (err) {
+        res.status(400).end();
+        return;
+    }
+    const ownerId = privateFolderOwner(topFolder);
+    if (ownerId === undefined) {
+        next();
+        return;
+    }
+    const user = await loadSessionUser(req, res);
+    if (!user || user.id !== ownerId) {
+        res.status(404).end();
+        return;
+    }
+    res.locals.privateComic = true;
+    next();
+});
+
 // comic pages: names only change through page add/delete/move (which renames files),
 // so a moderate max-age plus ETag/Last-Modified revalidation is safe.
 app.use('/public/uploads', express.static(path.join(__dirname, 'public', 'uploads'), {
     maxAge: DAY_MS,
     index: false,
     redirect: false,
-    fallthrough: false // a miss is a plain 404, no second stat on the slow mount
+    fallthrough: false, // a miss is a plain 404, no second stat on the slow mount
+    setHeaders: (res) => {
+        if (res.locals.privateComic) {
+            // never kept by Cloudflare or another shared cache
+            res.setHeader('Cache-Control', `private, max-age=${DAY_MS / 1000}`);
+        }
+    }
 }));
 
 // css/script/icons/images/fonts: 7 days (frontend busts its own scripts with ?v=)
@@ -64,21 +94,8 @@ app.use('/public', express.static(path.join(__dirname, 'public'), {
     }
 }));
 
-const sessionStore = new SequelizeStore({
-    db: db,
-    tableName: 'sessions',
-    expiration: 7 * 86400000,
-    checkExpirationInterval: 15 * 60 * 1000
-});
-
-// session handler
-app.use(session({
-    secret: process.env.SESSION_SECRET || "ComicRoom_lambda",
-    store: sessionStore,
-    saveUninitialized: false,
-    resave: false,
-    cookie: { maxAge: 7 * 86400000 }
-}))
+// session handler (config/session.js)
+app.use(sessionMiddleware)
 
 app.use((req, res, next) => {
     res.locals.isAdminUser = isAdmin(req.session.userData);
@@ -156,6 +173,7 @@ const startServer = async () => {
         await db.sync();
         await sessionStore.sync();
         await dbIndexes.ensureIndexes();
+        console.log(`Private comic folders: ${await refreshPrivateFolders()}`);
         jobProcessor.start();
         server = app.listen(PORT, () => {
             console.log(`Server [Online] on port ${PORT}`);

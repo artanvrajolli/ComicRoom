@@ -13,8 +13,13 @@ const { isAdmin } = require('../utils/admin');
 const { detectComicMetadata } = require('../utils/aiMetadata');
 const thumbnails = require('../utils/thumbnails');
 const { keywordWhere, normalizeKeyword } = require('../utils/queryHelpers');
+const { canReadComic, refreshPrivateFolders, visibleComicsWhere } = require('../utils/comicAccess');
+const { loadSessionUser } = require('../config/session');
 
-const GALLERY_ATTRIBUTES = ["id","title","author","coverImage","totalPages","savedFolder"];
+const GALLERY_ATTRIBUTES = ["id","title","author","coverImage","totalPages","savedFolder","isPrivate"];
+
+// Upload forms send private=1 when the uploader keeps the comic to themselves.
+const wantsPrivate = (body)=>String(body && body.private || '') === '1';
 
 function checkIfisOnline(req,res,next){
     if(typeof req.session.userData == 'undefined'){
@@ -46,9 +51,10 @@ function getUploadInfo(fileName) {
 // Creates the processing job for an upload file that has been fully received
 // (form upload, the chunked upload's final step, Web Share Target).
 // `uploadInfo` comes from getUploadInfo() and must already be validated.
-const queueUploadJob = (userId, uploadInfo, tempFilePath)=>{
+const queueUploadJob = (userId, uploadInfo, tempFilePath, makePrivate = false)=>{
     return jobProcessor.addJob({
         userId: userId,
+        makePrivate: !!makePrivate,
         comicFolderId: "comic_" + new Date().getTime(),
         fileName: uploadInfo.safeFileName,
         tempFilePath: tempFilePath,
@@ -106,7 +112,7 @@ const PostComicUpload = async (req,res)=>{
     
     try {
         // Add job to processing queue instead of processing immediately
-        const job = await queueUploadJob(req.session.userData.id, uploadInfo, req.files.fileComicUpload.tempFilePath);
+        const job = await queueUploadJob(req.session.userData.id, uploadInfo, req.files.fileComicUpload.tempFilePath, wantsPrivate(req.body));
         
         console.log('Job created successfully:', job.jobId);
         rememberStartedUpload(req, job, uploadInfo);
@@ -128,11 +134,15 @@ function findMainFolderImages(fileOrDir){
 }
 
 // The uploader and admins (ADMIN_USERNAMES) may edit and delete a comic.
+// A private comic belongs to its uploader alone.
 const canManageComic = (user, comic)=>{
     if(!user || !comic){
         return false;
     }
-    return comic.uid === user.id || isAdmin(user);
+    if(comic.uid === user.id){
+        return true;
+    }
+    return !comic.isPrivate && isAdmin(user);
 }
 
 const findManageableComic = async (req)=>{
@@ -371,6 +381,9 @@ const deleteComic = async (req,res)=>{
         }
         invalidateComicAssets(savedFolder);
         thumbnails.removeComicThumbs(comicId).catch(()=>{});
+        if(comic.isPrivate){
+            refreshPrivateFolders().catch((error)=>console.error('Could not refresh private comics:', error.message));
+        }
 
         console.log(`Comic ${comicId} (${savedFolder}) deleted by user ${req.session.userData.id}${comic.uid === req.session.userData.id ? '' : ' (admin)'}`);
         req.session.msg = `"${title}" was deleted.`;
@@ -458,18 +471,31 @@ const UpdateComicDetails =async (req,res)=>{
         return;
     }
 
-    await comic_table.update({
+    const changes = {
         coverImage: comicAssets.coverImage,
         totalPages: comicAssets.totalPages,
         title:req.body.title,
         author:req.body.author || "",
         description:String(req.body.description || "").slice(0, 5000),
         savedFolder:comic_folder_id
-     }, {
+    };
+    // Only the uploader sees the privacy switch (privacyField marks that it was on the form).
+    const privacyChanged = comic.uid === req.session.userData.id && req.body.privacyField === '1'
+        && wantsPrivate({ private: req.body.isPrivate }) !== !!comic.isPrivate;
+    if(privacyChanged){
+        changes.isPrivate = !comic.isPrivate;
+    }
+    await comic_table.update(changes, {
      where: {
          id:comic.id
      }
      });
+    if(privacyChanged){
+        await refreshPrivateFolders().catch((error)=>console.error('Could not refresh private comics:', error.message));
+        req.session.msg = changes.isPrivate
+            ? `"${changes.title}" is now private. Only you can see it.`
+            : `"${changes.title}" is now visible to everyone.`;
+    }
 
      res.redirect("/comic");
 }
@@ -483,7 +509,7 @@ const showcomic_id = async (req,res)=>{
             id:comic_id
         }
     }).then(async (data)=>{
-        if(!data){
+        if(!canReadComic(req.session.userData, data)){
             res.status(404);
             res.render("v_404", {
                 msg: "Comic not found",
@@ -513,7 +539,8 @@ const showcomic_id = async (req,res)=>{
             where: {
                 id: { [Op.lt]: data.id },
                 title: { [Op.ne]: null },
-                coverImage: { [Op.ne]: "" }
+                coverImage: { [Op.ne]: "" },
+                [Op.and]: [visibleComicsWhere(req.session.userData)]
             },
             order: [["id","DESC"]]
         }).catch(()=>null);
@@ -539,7 +566,7 @@ const showgallery_comic = async (req,res)=>{
                     coverImage: ""
                 }
             },
-            ...keywordWhere(searchKeywords)
+            [Op.and]: [visibleComicsWhere(req.session.userData), keywordWhere(searchKeywords)]
         },
         order: [
             ['id', 'DESC'],
@@ -572,10 +599,14 @@ const serveComicCover = async (req,res)=>{
     }
     let comic = null;
     try{
-        comic = await comic_table.findByPk(comicId, { attributes: ["id","savedFolder","coverImage"] });
+        comic = await comic_table.findByPk(comicId, { attributes: ["id","savedFolder","coverImage","isPrivate","uid"] });
     }catch(err){
         console.error('Cover lookup failed:', err.message);
         res.status(500).end();
+        return;
+    }
+    if(comic && comic.isPrivate && !canReadComic(await loadSessionUser(req, res), comic)){
+        res.status(404).end();
         return;
     }
     const originalPath = thumbnails.resolveOriginalCoverPath(comic);
@@ -588,7 +619,7 @@ const serveComicCover = async (req,res)=>{
         const thumb = await thumbnails.getThumbnail(comic);
         res.set({
             'Content-Type': 'image/webp',
-            'Cache-Control': `public, max-age=${thumbnails.CACHE_MAX_AGE_SECONDS}`,
+            'Cache-Control': `${comic.isPrivate ? 'private' : 'public'}, max-age=${thumbnails.CACHE_MAX_AGE_SECONDS}`,
             'ETag': thumb.etag,
             'Last-Modified': thumb.lastModified.toUTCString()
         });
@@ -607,6 +638,9 @@ const serveComicCover = async (req,res)=>{
     }
 
     // Fallback: stream the original cover (send handles ETag/Last-Modified/304).
+    if(comic.isPrivate){
+        res.setHeader('Cache-Control', `private, max-age=${thumbnails.CACHE_MAX_AGE_SECONDS}`);
+    }
     res.sendFile(originalPath, { maxAge: thumbnails.CACHE_MAX_AGE_SECONDS * 1000, dotfiles: 'allow' }, (err)=>{
         if(err && !res.headersSent){
             res.status(err.status === 404 || err.code === 'ENOENT' ? 404 : 500).end();
@@ -629,13 +663,13 @@ const servePageThumbnail = async (req,res)=>{
     }
     let comic = null;
     try{
-        comic = await comic_table.findByPk(comicId, { attributes: ["id","savedFolder"] });
+        comic = await comic_table.findByPk(comicId, { attributes: ["id","savedFolder","isPrivate","uid"] });
     }catch(err){
         console.error('Page thumbnail lookup failed:', err.message);
         res.status(500).end();
         return;
     }
-    if(!comic || !comic.savedFolder){
+    if(!comic || !comic.savedFolder || (comic.isPrivate && !canReadComic(await loadSessionUser(req, res), comic))){
         res.status(404).end();
         return;
     }
@@ -651,7 +685,7 @@ const servePageThumbnail = async (req,res)=>{
         const thumb = await thumbnails.getPageThumbnail(comic, file);
         res.set({
             'Content-Type': 'image/webp',
-            'Cache-Control': `public, max-age=${thumbnails.CACHE_MAX_AGE_SECONDS}`,
+            'Cache-Control': `${comic.isPrivate ? 'private' : 'public'}, max-age=${thumbnails.CACHE_MAX_AGE_SECONDS}`,
             'ETag': thumb.etag,
             'Last-Modified': thumb.lastModified.toUTCString()
         });
@@ -670,6 +704,9 @@ const servePageThumbnail = async (req,res)=>{
     }
 
     // Fallback: stream the original page (send handles ETag/Last-Modified/304).
+    if(comic.isPrivate){
+        res.setHeader('Cache-Control', `private, max-age=${thumbnails.CACHE_MAX_AGE_SECONDS}`);
+    }
     res.sendFile(originalPath, { maxAge: thumbnails.CACHE_MAX_AGE_SECONDS * 1000, dotfiles: 'allow' }, (err)=>{
         if(err && !res.headersSent){
             res.status(err.status === 404 || err.code === 'ENOENT' ? 404 : 500).end();
@@ -1126,7 +1163,7 @@ const PostChunkedUpload = async (req, res) => {
                 await fs.promises.rm(chunksDir, { recursive: true, force: true });
 
                 // Create a job for processing
-                const job = await queueUploadJob(userId, uploadInfo, finalFilePath);
+                const job = await queueUploadJob(userId, uploadInfo, finalFilePath, wantsPrivate(req.body));
 
                 return res.json({
                     status: 'complete',

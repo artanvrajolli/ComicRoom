@@ -7,6 +7,7 @@ const { extractMetadataFromFilename, getUploadFolderPath, invalidateComicAssets,
 const thumbnails = require('./thumbnails');
 const { decideBundle, detectComicMetadata } = require('./aiMetadata');
 const { cleanLabel, planComicParts } = require('./comicBundles');
+const { refreshPrivateFolders } = require('./comicAccess');
 
 // Bundles: AI metadata for at most this many comics per upload.
 const MAX_AI_PARTS = 30;
@@ -169,12 +170,17 @@ class JobProcessor {
                     author: (aiMetadata && aiMetadata.author) || (isBundlePart ? '' : (fallback.author || '')),
                     description: (aiMetadata && aiMetadata.description) || '',
                     coverImage: comicAssets.coverImage,
-                    totalPages: comicAssets.totalPages
+                    totalPages: comicAssets.totalPages,
+                    isPrivate: !!job.makePrivate
                 });
                 createdComics.push(comicData);
                 await job.update({ progress: Math.min(99, 60 + Math.round(((index + 1) / parts.length) * 39)) });
             }
 
+            // Guard the new folders' page files before anyone is told the comic exists.
+            if (job.makePrivate) {
+                await refreshPrivateFolders().catch(err => console.error('Could not refresh private comics:', err.message));
+            }
             await job.update({
                 status: 'completed',
                 progress: 100,
@@ -221,6 +227,7 @@ class JobProcessor {
             fileName: jobData.fileName,
             tempFilePath: jobData.tempFilePath,
             extension: jobData.extension,
+            makePrivate: !!jobData.makePrivate,
             status: 'pending'
         });
 
