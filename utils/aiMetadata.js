@@ -377,4 +377,117 @@ async function testAiConnection() {
     };
 }
 
-module.exports = { detectComicMetadata, testAiConnection, parseMetadataContent };
+// ---------- Bundle decision ----------
+// "Is this archive several comics or one?" is a yes/no question, so each
+// provider's cheapest fit is used instead of the metadata model:
+//   commandcode -> Command Code decision model typesafe/jev (/provider/v1/systemone)
+//   openai      -> OpenAI Decisions API, gpt-6-luna (/v1/decisions)
+//   anthropic   -> Claude Haiku 5.5 (cheapest Claude model) with a JSON answer
+// Override with AI_DECISION_MODEL. Returns null on any failure; callers fall
+// back to file-name rules.
+const DECISION_TIMEOUT_MS = 30000;
+const DECISION_DEFAULT_MODELS = {
+    commandcode: 'typesafe/jev',
+    openai: 'gpt-6-luna',
+    anthropic: 'claude-haiku-5-5'
+};
+const BUNDLE_INSTRUCTIONS = 'The state describes one uploaded comic archive: its file name and the groups of page images found inside '
+    + '(folder names or page-name prefixes, with page counts). Is this a bundle of several separate comics, such as different issues, '
+    + 'volumes or one-shots, that should each be listed as its own comic? Answer no when the groups are chapters, parts, scenes, covers, '
+    + 'extras or variants of a single comic, or when the names do not suggest separate releases.';
+
+function decisionUrl(settings) {
+    const fallback = {
+        commandcode: 'https://api.commandcode.ai/provider/v1/systemone',
+        openai: 'https://api.openai.com/v1/decisions',
+        anthropic: 'https://api.anthropic.com/v1/messages'
+    }[settings.provider];
+    const base = String(settings.baseUrl || '');
+    if (settings.provider === 'commandcode' && /\/chat\/completions\/?$/.test(base)) {
+        return base.replace(/\/chat\/completions\/?$/, '/systemone');
+    }
+    if (settings.provider === 'openai' && /\/chat\/completions\/?$/.test(base)) {
+        return base.replace(/\/chat\/completions\/?$/, '/decisions');
+    }
+    if (settings.provider === 'anthropic' && /\/v1\/messages\/?$/.test(base)) {
+        return base;
+    }
+    return fallback;
+}
+
+async function postJson(url, headers, body) {
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, headers),
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(DECISION_TIMEOUT_MS)
+    });
+    const text = await response.text();
+    if (!response.ok) {
+        throw new Error('HTTP ' + response.status + ': ' + text.slice(0, 200));
+    }
+    return JSON.parse(text);
+}
+
+function clampProbability(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return null;
+    return Math.min(1, Math.max(0, number));
+}
+
+async function decideBundle(state) {
+    const settings = getAiSettings();
+    if (!settings.apiKey) return null;
+    const model = String(process.env.AI_DECISION_MODEL || '').trim() || DECISION_DEFAULT_MODELS[settings.provider];
+    if (!model) return null;
+    const url = decisionUrl(settings);
+    let probability = null;
+
+    if (settings.provider === 'commandcode') {
+        const payload = await postJson(url, { Authorization: 'Bearer ' + settings.apiKey }, {
+            model: model,
+            state: state,
+            questions: { is_bundle: { type: 'noul', instructions: BUNDLE_INSTRUCTIONS } }
+        });
+        const answer = payload && payload.answers && payload.answers.is_bundle;
+        probability = clampProbability(answer && answer.noul);
+    } else if (settings.provider === 'openai') {
+        const payload = await postJson(url, { Authorization: 'Bearer ' + settings.apiKey }, {
+            model: model,
+            input: JSON.stringify(state),
+            questions: [{ type: 'predicate', name: 'is_bundle', instructions: BUNDLE_INSTRUCTIONS }]
+        });
+        const answers = payload && Array.isArray(payload.answers) ? payload.answers : [];
+        const answer = answers.find(item => item && item.name === 'is_bundle');
+        probability = clampProbability(answer && answer.probability);
+    } else if (settings.provider === 'anthropic') {
+        const payload = await postJson(url, { 'x-api-key': settings.apiKey, 'anthropic-version': '2023-06-01' }, {
+            model: model,
+            max_tokens: 2000,
+            output_config: { effort: 'low' },
+            messages: [{
+                role: 'user',
+                content: BUNDLE_INSTRUCTIONS + '\n\nState:\n' + JSON.stringify(state)
+                    + '\n\nReply with only JSON: {"is_bundle": true or false, "confidence": number from 0 to 1}.'
+            }]
+        });
+        if (payload && payload.stop_reason === 'refusal') return null;
+        const text = extractMessageText('anthropic', payload);
+        const match = /\{[\s\S]*\}/.exec(String(text || ''));
+        if (match) {
+            const parsed = JSON.parse(match[0]);
+            const confidence = clampProbability(parsed.confidence);
+            if (typeof parsed.is_bundle === 'boolean') {
+                const sure = confidence === null ? 0.75 : confidence;
+                probability = parsed.is_bundle ? sure : 1 - sure;
+            }
+        }
+    }
+
+    if (probability === null) {
+        throw new Error('decision reply had no usable answer');
+    }
+    return { isBundle: probability >= 0.5, probability: probability, model: model };
+}
+
+module.exports = { decideBundle, detectComicMetadata, testAiConnection, parseMetadataContent };

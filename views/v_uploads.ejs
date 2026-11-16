@@ -31,6 +31,10 @@
         }
         return e;
     }
+    // Comics created from this upload (several when the archive was a bundle); missing on older jobs.
+    function comicsOf(job) {
+        return Array.isArray(job.comics) ? job.comics.filter(function (c) { return c && c.id; }) : [];
+    }
     var activeCount = jobList.filter(function (j) { return j.status === 'pending' || j.status === 'processing'; }).length;
 %>
 <style>
@@ -110,6 +114,18 @@
     border-left: 3px solid var(--cr-danger, #f87171); overflow-wrap: anywhere;
 }
 .ul-note { margin: .6rem 0 0; font-size: .85rem; }
+.ul-bundle { margin-top: .75rem; }
+.ul-bundle .ul-note { margin: 0 0 .35rem; display: flex; align-items: center; gap: .4rem; }
+.ul-bundle-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--cr-border, #34343b); border-radius: var(--cr-radius-sm, 8px); overflow: hidden; }
+.ul-bundle-list li + li { border-top: 1px solid var(--cr-border, #34343b); }
+.ul-bundle-link {
+    display: flex; align-items: center; gap: .5rem; min-height: 44px; padding: .4rem .75rem;
+    background: var(--cr-surface-2, #26262b); color: var(--cr-text, #ededf0); font-size: .9rem; font-weight: 600;
+    text-decoration: none; overflow-wrap: anywhere;
+}
+.ul-bundle-link:hover { color: var(--cr-accent, #f5a524); }
+.ul-bundle-link > i { flex: 0 0 auto; color: var(--cr-muted, #a6a6b0); }
+.ul-bundle-link > span { min-width: 0; }
 .ul-actions { display: flex; gap: .5rem; margin-top: .85rem; }
 .ul-actions .btn:not(.btn-dismiss) { flex: 1 1 0; min-width: 0; white-space: nowrap; padding-left: .6rem; padding-right: .6rem; }
 @media (max-width: 399.98px) {
@@ -158,7 +174,8 @@
             var progress = status === 'completed' ? 100 : Math.max(0, Math.min(100, Math.round(Number(job.progress) || 0)));
             var ext = extOf(job);
             var iso = toIso(job.createdAt);
-            var comic = job.comic || null;
+            var jobComics = comicsOf(job);
+            var comic = job.comic || jobComics[0] || null;
             var nameId = 'job-name-' + String(job.jobId).replace(/[^A-Za-z0-9_-]/g, '');
         %>
         <li class="ul-job cr-card" data-job-id="<%= job.jobId %>" data-status="<%= status %>" data-progress="<%= progress %>" aria-labelledby="<%= nameId %>">
@@ -185,6 +202,16 @@
             <% if (status === 'completed' && !comic) { %>
             <p class="ul-note ul-muted">This comic is no longer in your library.</p>
             <% } %>
+            <% if (status === 'completed' && jobComics.length > 1) { %>
+            <div class="ul-bundle">
+                <p class="ul-note ul-muted"><i class="fas fa-layer-group" aria-hidden="true"></i> <%= jobComics.length %> comics from this archive</p>
+                <ul class="ul-bundle-list" aria-label="Comics from <%= job.fileName || 'this archive' %>">
+                    <% jobComics.forEach(function (c) { %>
+                    <li><a class="ul-bundle-link" href="/comic/show/<%= encodeURIComponent(String(c.id)) %>"><i class="fas fa-book-open" aria-hidden="true"></i><span><span class="visually-hidden">Open </span><%= c.title || 'Untitled comic' %></span></a></li>
+                    <% }); %>
+                </ul>
+            </div>
+            <% } %>
             <div class="ul-actions">
                 <% if (status === 'completed' && comic) { %>
                     <a class="btn btn-accent" href="/comic/show/<%= comic.id %>"><i class="fas fa-book-open" aria-hidden="true"></i> Open</a>
@@ -205,7 +232,7 @@
     <div class="cr-empty-state ul-empty" id="emptyState" <%= jobList.length ? 'hidden' : '' %>>
         <span class="cr-empty-icon" aria-hidden="true"><i class="fas fa-inbox"></i></span>
         <h2>No uploads yet</h2>
-        <p>Upload a CBZ, CBR or PDF file. It shows up here while it is processed.</p>
+        <p>Upload a CBZ, CBR, ZIP, RAR or PDF file. It shows up here while it is processed.</p>
         <div class="cr-empty-actions">
             <a class="btn btn-accent px-4" href="/comic/upload"><i class="fas fa-file-upload" aria-hidden="true"></i> Upload a comic</a>
         </div>
@@ -285,7 +312,8 @@
         var active = isActiveStatus(status);
         var progress = status === 'completed' ? 100 : Math.max(0, Math.min(100, Math.round(Number(job.progress) || 0)));
         var ext = extOf(job);
-        var comic = job.comic || null;
+        var jobComics = Array.isArray(job.comics) ? job.comics.filter(function (c) { return c && c.id; }) : [];
+        var comic = job.comic || jobComics[0] || null;
         var name = job.fileName || 'Untitled file';
         var nameId = 'job-name-' + String(job.jobId).replace(/[^A-Za-z0-9_-]/g, '');
 
@@ -329,6 +357,28 @@
         }
         if (status === 'failed') li.appendChild(el('p', 'ul-error', job.errorMessage || 'The file could not be processed. It may be damaged or in an unsupported format.'));
         if (status === 'completed' && !comic) li.appendChild(el('p', 'ul-note ul-muted', 'This comic is no longer in your library.'));
+        if (status === 'completed' && jobComics.length > 1) {
+            var bundle = el('div', 'ul-bundle');
+            var note = el('p', 'ul-note ul-muted');
+            note.appendChild(icon('fa-layer-group'));
+            note.appendChild(document.createTextNode(' ' + jobComics.length + ' comics from this archive'));
+            var ul = el('ul', 'ul-bundle-list');
+            ul.setAttribute('aria-label', 'Comics from ' + (job.fileName || 'this archive'));
+            jobComics.forEach(function (c) {
+                var item = el('li');
+                var a = el('a', 'ul-bundle-link');
+                a.href = '/comic/show/' + encodeURIComponent(c.id);
+                a.appendChild(icon('fa-book-open'));
+                var label = el('span');
+                label.appendChild(el('span', 'visually-hidden', 'Open '));
+                label.appendChild(document.createTextNode(c.title || 'Untitled comic'));
+                a.appendChild(label);
+                item.appendChild(a);
+                ul.appendChild(item);
+            });
+            bundle.appendChild(note); bundle.appendChild(ul);
+            li.appendChild(bundle);
+        }
 
         var actions = el('div', 'ul-actions');
         function link(cls, href, iconName, text) {
@@ -402,7 +452,8 @@
                 var fresh = buildCard(job);
                 card.parentNode.replaceChild(fresh, card);
                 changed = true;
-                if (status === 'completed') announce((job.fileName || 'Your comic') + ' is ready.');
+                var readyCount = Array.isArray(job.comics) ? job.comics.length : 0;
+                if (status === 'completed') announce((job.fileName || 'Your comic') + (readyCount > 1 ? ' is ready: ' + readyCount + ' comics added.' : ' is ready.'));
                 else if (status === 'failed') announce((job.fileName || 'An upload') + ' failed to process.');
                 if (focusedId === id) {
                     var target = fresh.querySelector('.ul-actions .btn');

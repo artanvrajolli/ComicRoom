@@ -5,7 +5,11 @@ const comic_table = require('../model/m_comic');
 const UploadJob = require('../model/m_uploadJob');
 const { extractMetadataFromFilename, getUploadFolderPath, invalidateComicAssets, resolveComicAssets, sanitizeUploadFileName } = require('./comicStorage');
 const thumbnails = require('./thumbnails');
-const { detectComicMetadata } = require('./aiMetadata');
+const { decideBundle, detectComicMetadata } = require('./aiMetadata');
+const { cleanLabel, planComicParts } = require('./comicBundles');
+
+// Bundles: AI metadata for at most this many comics per upload.
+const MAX_AI_PARTS = 30;
 
 class JobProcessor {
     constructor() {
@@ -112,44 +116,71 @@ class JobProcessor {
 
             console.log(`Extracting comic for job ${job.jobId}...`);
             await extractComics(workingFilePath, job.extension, job.comicFolderId);
-
             invalidateComicAssets(job.comicFolderId);
-            let comicAssets = resolveComicAssets(job.comicFolderId);
 
-            if (comicAssets.viewerType !== 'image' && comicAssets.viewerType !== 'pdf') {
+            // One archive may hold several comics (nested archives, one folder per
+            // issue, ...). Split them; ambiguous cases ask the AI decision model.
+            await job.update({ progress: 60 });
+            const plan = await planComicParts(job.comicFolderId, safeFileName, {
+                decide: decideBundle,
+                log: (message) => console.log(`Job ${job.jobId}: ${message}`)
+            });
+            const parts = plan.parts.filter(part => {
+                const assets = resolveComicAssets(part.folder);
+                return assets.viewerType === 'image' || assets.viewerType === 'pdf';
+            });
+            if (parts.length === 0) {
                 throw new Error('No supported content was found in the uploaded file.');
             }
-
-            await job.update({ progress: 85 });
-
-            let aiMetadata = null;
-            try {
-                aiMetadata = await detectComicMetadata(job.comicFolderId, comicAssets.images);
-            } catch (error) {
-                console.error('AI metadata detection failed:', error.message);
+            if (plan.bundle) {
+                console.log(`Job ${job.jobId}: bundle with ${parts.length} comics (${plan.reason})`);
             }
 
-            if (aiMetadata) {
-                const found = Array.isArray(aiMetadata.found) ? aiMetadata.found : [];
-                console.log(`AI metadata for job ${job.id}: ${found.length ? 'found ' + found.join(', ') : 'nothing visible'}; using filename for anything missing`);
+            const createdComics = [];
+            for (let index = 0; index < parts.length; index++) {
+                const part = parts[index];
+                const comicAssets = resolveComicAssets(part.folder);
+                const isBundlePart = parts.length > 1;
+
+                let aiMetadata = null;
+                // One AI call per comic; very large bundles fall back to file names.
+                if (index < MAX_AI_PARTS) {
+                    try {
+                        aiMetadata = await detectComicMetadata(part.folder, comicAssets.images);
+                    } catch (error) {
+                        console.error('AI metadata detection failed:', error.message);
+                    }
+                }
+                if (aiMetadata) {
+                    const found = Array.isArray(aiMetadata.found) ? aiMetadata.found : [];
+                    console.log(`AI metadata for job ${job.id}${isBundlePart ? ` part ${index + 1}/${parts.length}` : ''}: ${found.length ? 'found ' + found.join(', ') : 'nothing visible'}; using filename for anything missing`);
+                }
+
+                // Bundle parts are named after their own archive/folder, not the outer file.
+                const fallback = isBundlePart && part.label
+                    ? extractMetadataFromFilename(part.label + '.cbz', { knownTitles })
+                    : extractedMetadata;
+                const fallbackTitle = (isBundlePart && part.label) ? cleanLabel(part.label) : fallback.title;
+
+                const comicData = await comic_table.create({
+                    savedFolder: part.folder,
+                    uid: job.userId,
+                    title: (aiMetadata && aiMetadata.title) || fallbackTitle || fallback.title,
+                    author: (aiMetadata && aiMetadata.author) || (isBundlePart ? '' : (fallback.author || '')),
+                    description: (aiMetadata && aiMetadata.description) || '',
+                    coverImage: comicAssets.coverImage,
+                    totalPages: comicAssets.totalPages
+                });
+                createdComics.push(comicData);
+                await job.update({ progress: Math.min(99, 60 + Math.round(((index + 1) / parts.length) * 39)) });
             }
-
-            await job.update({ progress: 95 });
-
-            const comicData = await comic_table.create({
-                savedFolder: job.comicFolderId,
-                uid: job.userId,
-                title: (aiMetadata && aiMetadata.title) || extractedMetadata.title,
-                author: (aiMetadata && aiMetadata.author) || extractedMetadata.author || '',
-                description: (aiMetadata && aiMetadata.description) || '',
-                coverImage: comicAssets.coverImage,
-                totalPages: comicAssets.totalPages
-            });
 
             await job.update({
                 status: 'completed',
                 progress: 100,
-                comicId: comicData.id
+                comicId: createdComics[0].id,
+                comicFolderId: createdComics[0].savedFolder,
+                resultComicIds: createdComics.map(comic => comic.id).join(',')
             });
 
             try {
@@ -163,8 +194,8 @@ class JobProcessor {
                 console.error('Error cleaning up temp files:', cleanupError);
             }
 
-            console.log(`Job ${job.jobId} completed successfully`);
-            thumbnails.warmThumbnail(comicData);
+            console.log(`Job ${job.jobId} completed successfully (${createdComics.length} comic${createdComics.length === 1 ? '' : 's'})`);
+            createdComics.forEach(comic => thumbnails.warmThumbnail(comic));
 
         } catch (error) {
             console.error('Error processing job:', error);

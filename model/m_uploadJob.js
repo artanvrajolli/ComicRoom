@@ -35,6 +35,12 @@ const UploadJob = db.define("upload_jobs", {
         type: Sequelize.STRING(10),
         allowNull: false
     },
+    // Comma-separated ids of every comic created from this upload (a bundle
+    // archive makes several). comicId keeps the first one.
+    resultComicIds: {
+        type: Sequelize.TEXT,
+        allowNull: true
+    },
     errorMessage: {
         type: Sequelize.TEXT,
         allowNull: true

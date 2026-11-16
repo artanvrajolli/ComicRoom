@@ -5,7 +5,7 @@ const IMAGE_FILE_REGEX = /\.(?:apng|avif|gif|jpeg|png|svg|webp|jpg)$/i;
 const PDF_FILE_REGEX = /\.pdf$/i;
 const PAGE_MANAGER_TEMP_PREFIX = '__page_manager__';
 const PDF_COVER_FILE_NAME = '__pdf_cover__.svg';
-const ALLOWED_UPLOAD_EXTENSIONS = ['cbz', 'cbr', 'pdf'];
+const ALLOWED_UPLOAD_EXTENSIONS = ['cbz', 'cbr', 'zip', 'rar', 'pdf'];
 const TITLE_NOISE_WORDS = new Set([
     'annual',
     'book',

@@ -12,6 +12,12 @@
         failed: 'Processing failed'
     };
     var hasComicLinks = jobStatus === 'completed' && job.comicId && job.comicFolderId;
+    // A bundle archive (several comics in one ZIP/RAR) creates more than one comic.
+    var comicList = (typeof comics !== 'undefined' && Array.isArray(comics)) ? comics
+        : (Array.isArray(job.comics) ? job.comics : []);
+    comicList = comicList.filter(function (c) { return c && c.id; });
+    var isBundle = jobStatus === 'completed' && comicList.length > 1;
+    if (isBundle) { stageTitles.completed = 'Your comics are ready'; }
 %>
 <style>
 :where(.cr-card) {
@@ -98,6 +104,17 @@
 .st-nav a { min-height: 44px; display: inline-flex; align-items: center; gap: .4rem; padding: 0 .25rem; color: var(--cr-muted, #a6a6b0); text-decoration: none; font-weight: 600; font-size: .9rem; }
 .st-nav a:hover { color: var(--cr-text, #ededf0); }
 
+/* Bundle result: one row per comic created from the archive */
+.st-bundle-title { font-size: 1.05rem; font-weight: 700; margin: 0 0 .75rem; }
+.st-bundle-title:focus { outline: none; }
+.st-bundle-list { list-style: none; padding: 0; margin: 0; border: 1px solid var(--cr-border, #34343b); border-radius: var(--cr-radius-sm, 8px); overflow: hidden; }
+.st-bundle-item { display: flex; align-items: center; gap: .5rem; padding: .25rem .5rem .25rem .75rem; background: var(--cr-surface-2, #26262b); }
+.st-bundle-item + .st-bundle-item { border-top: 1px solid var(--cr-border, #34343b); }
+.st-bundle-open { flex: 1 1 auto; min-width: 0; min-height: 44px; display: flex; align-items: center; gap: .5rem; color: var(--cr-text, #ededf0); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
+.st-bundle-open:hover { color: var(--cr-accent, #f5a524); }
+.st-bundle-open .fas { color: var(--cr-muted, #a6a6b0); flex: 0 0 auto; }
+.st-page .st-bundle-item .btn { flex: 0 0 auto; min-height: 44px; padding: 0 .85rem; font-size: .9rem; }
+
 /* Phones: compact vertical stepper, full-width result actions */
 @media (max-width: 575.98px) {
     .st-page .cr-card { padding: 1.1rem; }
@@ -124,7 +141,8 @@
          data-current-status="<%=jobStatus%>"
          data-current-progress="<%=jobProgress%>"
          data-comic-id="<%=job.comicId || ''%>"
-         data-comic-folder-id="<%=job.comicFolderId || ''%>">
+         data-comic-folder-id="<%=job.comicFolderId || ''%>"
+         data-comic-count="<%= comicList.length %>">
 
         <% if(typeof msg != 'undefined' && msg != ""){ %>
         <div class="alert alert-info mb-3" role="status"><%=msg%></div>
@@ -164,7 +182,7 @@
 
         <div id="connectionNotice" class="alert alert-warning mt-4 mb-0 small" role="status" hidden></div>
 
-        <div id="doneActions" class="d-flex flex-wrap gap-2 mt-4 st-actions" <%= hasComicLinks ? '' : 'hidden' %>>
+        <div id="doneActions" class="d-flex flex-wrap gap-2 mt-4 st-actions" <%= (hasComicLinks && !isBundle) ? '' : 'hidden' %>>
             <a id="btnOpenComic" class="btn btn-accent btn-lg px-4" href="<%= hasComicLinks ? '/comic/show/' + job.comicId : '#' %>">
                 <i class="fas fa-book-open" aria-hidden="true"></i> Open comic
             </a>
@@ -172,6 +190,24 @@
                 <i class="fas fa-pen" aria-hidden="true"></i> Edit details
             </a>
         </div>
+
+        <section id="bundleResult" class="mt-4" aria-labelledby="bundleTitle" <%= isBundle ? '' : 'hidden' %>>
+            <h2 id="bundleTitle" class="st-bundle-title" tabindex="-1"><%= isBundle ? comicList.length + ' comics added from this archive' : '' %></h2>
+            <ul id="bundleList" class="st-bundle-list">
+                <% if (isBundle) { comicList.forEach(function (c) { var cTitle = c.title || 'Untitled comic'; %>
+                <li class="st-bundle-item">
+                    <a class="st-bundle-open" href="/comic/show/<%= encodeURIComponent(String(c.id)) %>">
+                        <i class="fas fa-book-open" aria-hidden="true"></i><span class="min-w-0"><%= cTitle %></span>
+                    </a>
+                    <% if (c.savedFolder) { %>
+                    <a class="btn btn-quiet" href="/comic/<%= encodeURIComponent(String(c.savedFolder)) %>/<%= encodeURIComponent(String(c.id)) %>">
+                        <i class="fas fa-pen" aria-hidden="true"></i> Edit<span class="visually-hidden"> <%= cTitle %></span>
+                    </a>
+                    <% } %>
+                </li>
+                <% }); } %>
+            </ul>
+        </section>
 
         <div id="redirectInfo" class="small st-muted mt-3" hidden>
             Opening the edit page in <span id="countdown">5</span>s.
@@ -204,6 +240,7 @@
     var currentStatus = statusContainer.dataset.currentStatus;
     var lastProgress = Number(statusContainer.dataset.currentProgress) || 0;
     var sawActiveState = currentStatus === 'pending' || currentStatus === 'processing';
+    var comicCount = Number(statusContainer.dataset.comicCount) || 0;
 
     var MIN_DELAY = 1500;
     var MAX_DELAY = 10000;
@@ -237,7 +274,7 @@
         switch (status) {
             case 'pending': return 'Waiting in the queue';
             case 'processing': return progress >= 85 ? 'Reading details and saving' : 'Extracting pages';
-            case 'completed': return 'Your comic is ready';
+            case 'completed': return comicCount > 1 ? 'Your comics are ready' : 'Your comic is ready';
             case 'failed': return 'Processing failed';
             default: return 'Processing your comic';
         }
@@ -298,7 +335,7 @@
             el('failedActions').hidden = false;
             announce('Processing failed. ' + (errorMessage || ''));
         } else if (status === 'completed') {
-            announce('Your comic is ready.');
+            announce(comicCount > 1 ? comicCount + ' comics added from this archive.' : 'Your comic is ready.');
         } else {
             announce(stageNames[stage] + ': ' + title + '.');
         }
@@ -326,6 +363,52 @@
             }
         }, 1000);
         editLink.focus();
+    }
+
+    // Several comics from one archive: list them all and never auto-redirect
+    function showBundle(list, moveFocus) {
+        var ul = el('bundleList');
+        ul.textContent = '';
+        list.forEach(function (c) {
+            var title = c.title || 'Untitled comic';
+            var li = document.createElement('li');
+            li.className = 'st-bundle-item';
+
+            var open = document.createElement('a');
+            open.className = 'st-bundle-open';
+            open.href = '/comic/show/' + encodeURIComponent(c.id);
+            var icon = document.createElement('i');
+            icon.className = 'fas fa-book-open';
+            icon.setAttribute('aria-hidden', 'true');
+            var label = document.createElement('span');
+            label.className = 'min-w-0';
+            label.textContent = title;
+            open.appendChild(icon);
+            open.appendChild(label);
+            li.appendChild(open);
+
+            if (c.savedFolder) {
+                var edit = document.createElement('a');
+                edit.className = 'btn btn-quiet';
+                edit.href = '/comic/' + encodeURIComponent(c.savedFolder) + '/' + encodeURIComponent(c.id);
+                var pen = document.createElement('i');
+                pen.className = 'fas fa-pen';
+                pen.setAttribute('aria-hidden', 'true');
+                var hidden = document.createElement('span');
+                hidden.className = 'visually-hidden';
+                hidden.textContent = ' ' + title;
+                edit.appendChild(pen);
+                edit.appendChild(document.createTextNode(' Edit'));
+                edit.appendChild(hidden);
+                li.appendChild(edit);
+            }
+            ul.appendChild(li);
+        });
+        el('bundleTitle').textContent = list.length + ' comics added from this archive';
+        el('doneActions').hidden = true;
+        el('redirectInfo').hidden = true;
+        el('bundleResult').hidden = false;
+        if (moveFocus) el('bundleTitle').focus();
     }
 
     el('stayButton').addEventListener('click', function () {
@@ -385,11 +468,15 @@
                 el('lastUpdate').hidden = false;
 
                 var progress = Number(data.progress) || 0;
+                var createdComics = Array.isArray(data.comics) ? data.comics.filter(function (c) { return c && c.id; }) : [];
+                if (data.status === 'completed') comicCount = createdComics.length;
                 render(data.status, progress, data.errorMessage);
 
                 if (data.status === 'completed') {
                     finish();
-                    if (data.comicId && data.comicFolderId) {
+                    if (createdComics.length > 1) {
+                        showBundle(createdComics, sawActiveState);
+                    } else if (data.comicId && data.comicFolderId) {
                         showDoneActions(data.comicFolderId, data.comicId, sawActiveState);
                     }
                     return;
@@ -448,7 +535,9 @@
 
     if (currentStatus === 'completed') {
         finished = true;
-        if (statusContainer.dataset.comicId && statusContainer.dataset.comicFolderId) {
+        if (comicCount > 1) {
+            // The list was rendered on the server; nothing to redirect to
+        } else if (statusContainer.dataset.comicId && statusContainer.dataset.comicFolderId) {
             showDoneActions(statusContainer.dataset.comicFolderId, statusContainer.dataset.comicId, false);
         }
     } else if (currentStatus === 'failed') {

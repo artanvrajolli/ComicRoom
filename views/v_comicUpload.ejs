@@ -170,7 +170,7 @@
     <div class="up-head">
         <div class="min-w-0">
             <h1 class="cr-page-title h3 mb-0">Upload a comic</h1>
-            <p class="up-muted">CBZ, CBR or PDF, up to 2 GB. Large files are sent in small parts, so a dropped connection does not mean starting over.</p>
+            <p class="up-muted">CBZ, CBR, ZIP, RAR or PDF, up to 2 GB. Large files are sent in small parts, so a dropped connection does not mean starting over.</p>
         </div>
         <a class="up-head-link" href="/comic/uploads"><i class="fas fa-list-ul" aria-hidden="true"></i> Your uploads</a>
     </div>
@@ -194,14 +194,16 @@
                 <span class="up-types" aria-label="Accepted file types">
                     <span class="up-type">CBZ</span>
                     <span class="up-type">CBR</span>
+                    <span class="up-type">ZIP</span>
+                    <span class="up-type">RAR</span>
                     <span class="up-type">PDF</span>
                 </span>
                 <span class="small up-muted">Maximum file size: 2 GB</span>
                 <input name="fileComicUpload" id="file1" type="file" class="visually-hidden"
-                       accept=".cbz,.cbr,.pdf,application/zip,application/x-cbz,application/vnd.comicbook+zip,application/x-rar-compressed,application/vnd.rar,application/vnd.comicbook-rar,application/x-cbr,application/pdf"
+                       accept=".cbz,.cbr,.zip,.rar,.pdf,application/zip,application/x-zip-compressed,application/x-cbz,application/vnd.comicbook+zip,application/x-rar,application/x-rar-compressed,application/vnd.rar,application/vnd.comicbook-rar,application/x-cbr,application/pdf"
                        aria-describedby="fileHelp">
             </label>
-            <p id="fileHelp" class="visually-hidden">Accepted types: CBZ, CBR or PDF, up to 2 GB.</p>
+            <p id="fileHelp" class="visually-hidden">Accepted types: CBZ, CBR, ZIP, RAR or PDF, up to 2 GB. A ZIP or RAR holding several comics is split into separate comics.</p>
 
             <div id="fileSummary" class="up-file mt-3" hidden>
                 <i id="fileIcon" class="fas fa-file-archive up-file-icon" aria-hidden="true"></i>
@@ -278,6 +280,10 @@
             <span>Keep ComicRoom open until the upload finishes. Switching apps or locking your phone can pause it; when you come back it continues from where it stopped.</span>
         </li>
         <li>
+            <i class="fas fa-layer-group" aria-hidden="true"></i>
+            <span>A ZIP or RAR that holds several comics is split into separate comics automatically.</span>
+        </li>
+        <li>
             <i class="fas fa-info-circle" aria-hidden="true"></i>
             <span>After the upload, the comic is extracted on the server. You can follow it on the status page or in <a href="/comic/uploads">your uploads</a>, and edit the title, author and description when it is ready.</span>
         </li>
@@ -298,7 +304,7 @@
     var CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks
     var MAX_RETRIES = 3;
     var MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024; // 2GB, matches server limit
-    var ALLOWED_EXTENSIONS = ['cbz', 'cbr', 'pdf'];
+    var ALLOWED_EXTENSIONS = ['cbz', 'cbr', 'zip', 'rar', 'pdf'];
 
     var fileInput = _('file1');
     var dropzone = _('dropzone');
@@ -318,7 +324,7 @@
     var hiddenDuringUpload = false;
     var wakeLock = null;
 
-    // iOS greys out files whose type it cannot map from accept (.cbz/.cbr usually), so let
+    // iOS greys out files whose type it cannot map from accept (.cbz/.cbr/.rar usually), so let
     // every file through there; the extension is validated below and again on the server.
     var isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     if (isIOS) fileInput.removeAttribute('accept');
@@ -459,7 +465,7 @@
     function validateFile(file) {
         if (!file) return 'Please select a file first.';
         if (ALLOWED_EXTENSIONS.indexOf(getExtension(file.name)) === -1) {
-            return '"' + file.name + '" is not a supported file. Choose a .cbz, .cbr or .pdf file.';
+            return '"' + file.name + '" is not a supported file. Choose a .cbz, .cbr, .zip, .rar or .pdf file.';
         }
         if (file.size === 0) return 'This file is empty. Choose a different file.';
         if (file.size > MAX_FILE_SIZE) {

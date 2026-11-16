@@ -99,7 +99,7 @@ const PostComicUpload = async (req,res)=>{
     const uploadInfo = getUploadInfo(req.files.fileComicUpload.name);
     if(!ALLOWED_UPLOAD_EXTENSIONS.includes(uploadInfo.extension)){
         console.log('Invalid file extension:', uploadInfo.extension);
-        req.session.msg = "Extension should be .cbz, .cbr or .pdf";
+        req.session.msg = "Extension should be .cbz, .cbr, .zip, .rar or .pdf";
         res.redirect("/comic/upload")
         return;
     }
@@ -693,6 +693,29 @@ const fetchPage = async (id_comic,userId)=>{
     return data.pageNumber;
 }
 
+// Ids of every comic an upload created, in order (bundles create several).
+const jobComicIds = (job)=>{
+    const ids = String(job && job.resultComicIds || '').split(',').map(Number).filter(Number.isInteger);
+    if(ids.length === 0 && job && Number.isInteger(job.comicId)){
+        ids.push(job.comicId);
+    }
+    return ids;
+}
+
+// [{ id, title, savedFolder }] for the comics of one upload that still exist.
+const getJobComics = async (job)=>{
+    const ids = jobComicIds(job);
+    if(ids.length === 0){
+        return [];
+    }
+    const rows = await comic_table.findAll({
+        attributes: ['id','title','savedFolder'],
+        where: { id: { [Op.in]: ids }, uid: job.userId }
+    });
+    const byId = new Map(rows.map((row)=>[row.id, { id: row.id, title: row.title, savedFolder: row.savedFolder }]));
+    return ids.map((id)=>byId.get(id)).filter(Boolean);
+}
+
 const getUploadStatus = async (req, res) => {
     const jobId = req.params.jobId;
     
@@ -715,9 +738,11 @@ const getUploadStatus = async (req, res) => {
         var msg = req.session.msg;
         req.session.msg = "";
         
+        const comics = job.status === 'completed' ? await getJobComics(job) : [];
         res.render("v_uploadStatus", {
             userData: req.session.userData,
             job: job,
+            comics: comics,
             msg: msg
         });
         
@@ -749,7 +774,8 @@ const getUploadStatusAPI = async (req, res) => {
             comicId: job.comicId,
             comicFolderId: job.comicFolderId,
             errorMessage: job.errorMessage,
-            fileName: job.fileName
+            fileName: job.fileName,
+            comics: job.status === 'completed' ? await getJobComics(job) : []
         };
         
         res.json(response);
@@ -797,12 +823,12 @@ const toIsoString = (value)=>{
 // comic = { id, title, savedFolder } or null when it no longer exists.
 const getRecentUploadJobs = async (userId)=>{
     const jobs = await UploadJob.findAll({
-        attributes: ['jobId','fileName','extension','status','progress','errorMessage','createdAt','updatedAt','comicId'],
+        attributes: ['jobId','userId','fileName','extension','status','progress','errorMessage','createdAt','updatedAt','comicId','resultComicIds'],
         where: { userId: userId },
         order: [['createdAt','DESC'],['id','DESC']],
         limit: RECENT_UPLOADS_LIMIT
     });
-    const comicIds = Array.from(new Set(jobs.map((job)=>job.comicId).filter((id)=>Number.isInteger(id))));
+    const comicIds = Array.from(new Set(jobs.flatMap((job)=>jobComicIds(job))));
     const comics = comicIds.length === 0 ? [] : await comic_table.findAll({
         attributes: ['id','title','savedFolder'],
         where: { id: { [Op.in]: comicIds }, uid: userId }
@@ -818,7 +844,8 @@ const getRecentUploadJobs = async (userId)=>{
         createdAt: toIsoString(job.createdAt),
         updatedAt: toIsoString(job.updatedAt),
         comicId: job.comicId,
-        comic: (job.comicId && comicsById.get(job.comicId)) || null
+        comic: (job.comicId && comicsById.get(job.comicId)) || null,
+        comics: jobComicIds(job).map((id)=>comicsById.get(id)).filter(Boolean)
     }));
 }
 
@@ -897,7 +924,7 @@ const PostShareTarget = async (req,res)=>{
     };
 
     if(!file || !file.tempFilePath){
-        fail("No file was shared. Choose a .cbz, .cbr or .pdf file.");
+        fail("No file was shared. Choose a .cbz, .cbr, .zip, .rar or .pdf file.");
         return;
     }
     if(file.truncated){
@@ -910,7 +937,7 @@ const PostShareTarget = async (req,res)=>{
     }
     const uploadInfo = getUploadInfo(file.name);
     if(!ALLOWED_UPLOAD_EXTENSIONS.includes(uploadInfo.extension)){
-        fail("Extension should be .cbz, .cbr or .pdf");
+        fail("Extension should be .cbz, .cbr, .zip, .rar or .pdf");
         return;
     }
 
@@ -948,7 +975,7 @@ const PostChunkedUpload = async (req, res) => {
         // Validate file extension
         const uploadInfo = getUploadInfo(fileName);
         if (!ALLOWED_UPLOAD_EXTENSIONS.includes(uploadInfo.extension)) {
-            return res.status(400).json({ error: "Only .cbz, .cbr and .pdf files are allowed" });
+            return res.status(400).json({ error: "Only .cbz, .cbr, .zip, .rar and .pdf files are allowed" });
         }
 
         // Create chunks directory if it doesn't exist

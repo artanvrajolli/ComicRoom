@@ -61,7 +61,8 @@ async function ensureLastPageIndex() {
 // db.sync() without alter never widens existing columns, so tables created by
 // older versions can be narrower than the models (e.g. comics.coverImage was
 // VARCHAR(100), which rejected long page paths with "Data too long").
-// Widen any VARCHAR column that is shorter than its model. Never narrows.
+// Widen any VARCHAR column that is shorter than its model (never narrows),
+// and add nullable columns that the models gained since the table was made.
 function syncedModels() {
     return [
         require('../model/m_comic'),
@@ -91,6 +92,18 @@ async function ensureColumnWidths() {
             continue;
         }
         const byName = new Map(columns.map(column => [column.name, column]));
+        // Add nullable columns that newer models declare (db.sync() never adds them).
+        for (const [attribute, definition] of Object.entries(model.rawAttributes)) {
+            const field = definition.field || attribute;
+            if (byName.has(field) || definition.allowNull === false || definition.primaryKey) continue;
+            try {
+                await db.getQueryInterface().addColumn(table, field, { type: definition.type, allowNull: true });
+                console.log(`Added column ${table}.${field}`);
+                byName.set(field, { name: field, type: 'added' });
+            } catch (err) {
+                console.error(`Could not add column ${table}.${field}:`, err.message);
+            }
+        }
         for (const [attribute, definition] of Object.entries(model.rawAttributes)) {
             const wanted = modelStringLength(definition);
             const column = byName.get(definition.field || attribute);

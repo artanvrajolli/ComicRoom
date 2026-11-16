@@ -25,7 +25,52 @@ function isValidZipFile(filename) {
   }
 }
 
+const ZIP_EXTENSIONS = ['cbz', 'zip'];
+const RAR_EXTENSIONS = ['cbr', 'rar'];
+
+// Reads the first bytes to tell what the file really is. Comic files are often
+// misnamed (a .cbr that is a zip, a .zip that is a rar), so the content wins
+// over the extension. Returns 'zip', 'rar', 'pdf', '7z' or ''.
+function sniffArchiveKind(filename) {
+  let fd = null;
+  try {
+    const buffer = Buffer.alloc(8);
+    fd = fs.openSync(filename, 'r');
+    const read = fs.readSync(fd, buffer, 0, 8, 0);
+    const head = buffer.subarray(0, read);
+    const hex = head.toString('hex');
+    if (hex.startsWith('504b0304') || hex.startsWith('504b0506') || hex.startsWith('504b0708')) return 'zip';
+    if (hex.startsWith('526172211a07')) return 'rar'; // "Rar!\x1a\x07" (RAR 4 and 5)
+    if (head.toString('latin1').startsWith('%PDF')) return 'pdf';
+    if (hex.startsWith('377abcaf271c')) return '7z';
+  } catch (error) {
+    // unreadable: fall back to the extension
+  } finally {
+    if (fd !== null) { try { fs.closeSync(fd); } catch (e) {} }
+  }
+  return '';
+}
+
+// 'zip' | 'rar' | 'pdf' for a file, by content first and extension second.
+function resolveArchiveKind(filename, extension) {
+  const sniffed = sniffArchiveKind(filename);
+  if (sniffed === '7z') {
+    throw new Error('7-Zip archives (.7z / .cb7) are not supported. Repack the comic as .zip, .cbz, .rar or .cbr.');
+  }
+  if (sniffed) return sniffed;
+  const ext = String(extension || '').replace(/^\./, '').toLowerCase();
+  if (ZIP_EXTENSIONS.includes(ext)) return 'zip';
+  if (RAR_EXTENSIONS.includes(ext)) return 'rar';
+  if (ext === 'pdf') return 'pdf';
+  return '';
+}
+
 async function extractComics(filename,extension,pathOutput = ""){
+    const kind = resolveArchiveKind(filename, extension);
+    if (!kind) {
+        throw new Error('This file is not a comic archive this app can open (expected ZIP, RAR or PDF content).');
+    }
+    extension = kind === 'zip' ? 'cbz' : kind === 'rar' ? 'cbr' : 'pdf';
   try{
     fs.mkdirSync(process.cwd()+'/public/uploads/'+pathOutput, { recursive: true })
   }catch(err){}
@@ -152,10 +197,16 @@ async function extractComics(filename,extension,pathOutput = ""){
             const files = [...extracted.files];
             
             // Save all extracted files
+            const destRoot = path.resolve(dest) + path.sep;
             for (const file of files) {
               if (!file.extraction) continue;
               
-              const filePath = path.join(dest, file.fileHeader.name);
+              const filePath = path.resolve(dest, file.fileHeader.name);
+              // Never write outside the comic folder ("../" entries in a hostile archive).
+              if (!filePath.startsWith(destRoot)) {
+                console.warn('Skipping RAR entry outside the target folder: ' + file.fileHeader.name);
+                continue;
+              }
               const dir = path.dirname(filePath);
               
               // Create directory if it doesn't exist
@@ -177,4 +228,6 @@ async function extractComics(filename,extension,pathOutput = ""){
 }
 
 module.exports = extractComics;
+module.exports.resolveArchiveKind = resolveArchiveKind;
+module.exports.sniffArchiveKind = sniffArchiveKind;
 //console.log(extractComics("Marvel Masterworks - Marvel Two-In-One v04 (2019) (Digital) (Zone-Empire).cbr"))
