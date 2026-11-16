@@ -2,6 +2,9 @@ const path = require('path');
 const { getAiSettings } = require('../config/ai');
 
 const MAX_ANALYZED_PAGES = 5;
+// Reasoning models count their thinking against max_tokens; 900 was often used
+// up before the JSON answer was written (empty reply, finish_reason "length").
+const METADATA_MAX_TOKENS = 4000;
 const MAX_IMAGE_DIMENSION = 1200;
 const MAX_DESCRIPTION_LENGTH = 5000;
 const REQUEST_TIMEOUT_MS = 60000;
@@ -310,9 +313,11 @@ async function requestAi(settings, text, images, maxTokens) {
         return { ok: false, error: 'The AI response was not valid JSON.' };
     }
 
+    const choice = payload && Array.isArray(payload.choices) ? payload.choices[0] : null;
     return {
         ok: true,
-        text: extractMessageText(settings.provider, payload)
+        text: extractMessageText(settings.provider, payload),
+        finishReason: (choice && choice.finish_reason) || (payload && payload.stop_reason) || ''
     };
 }
 
@@ -340,7 +345,7 @@ async function detectComicMetadata(savedFolder, pageImages) {
         return null;
     }
 
-    const result = await requestAi(settings, METADATA_PROMPT, imageParts, 900);
+    const result = await requestAi(settings, METADATA_PROMPT, imageParts, METADATA_MAX_TOKENS);
     if (!result.ok) {
         console.error('AI metadata request failed: ' + result.error);
         return null;
@@ -348,7 +353,8 @@ async function detectComicMetadata(savedFolder, pageImages) {
 
     const metadata = parseMetadataContent(result.text);
     if (!metadata) {
-        console.error('AI metadata: reply had no usable JSON: ' + String(result.text || '').slice(0, 200));
+        const why = /^(length|max_tokens)$/.test(result.finishReason || '') ? ' (reply hit the token limit)' : '';
+        console.error('AI metadata: reply had no usable JSON' + why + ': ' + String(result.text || '').slice(0, 200));
     }
     return metadata;
 }
