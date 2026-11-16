@@ -321,8 +321,13 @@ const moveComicPage = async (req,res)=>{
     }
 }
 
-// Upload folders are always a single "comic_<digits>" directory under public/uploads.
-const isSafeComicFolderName = (folder)=>/^comic_[0-9]+$/.test(String(folder || ''));
+// Every upload lives in one "comic_<digits>" directory under public/uploads.
+// Older comics store a sub-path ("comic_123/Some Title"); the whole top folder
+// belongs to that comic. Returns '' for anything else.
+const getComicTopFolder = (savedFolder)=>{
+    const match = /^(comic_[0-9]+)(?:\/|$)/.exec(String(savedFolder || ''));
+    return match ? match[1] : '';
+}
 
 // POST /comic/:folderID/:id_db/delete  (uploader or admin)
 const deleteComic = async (req,res)=>{
@@ -349,8 +354,12 @@ const deleteComic = async (req,res)=>{
         await comic_table.destroy({ where: { id: comicId } });
 
         // Files last: if removing them fails, the comic is already gone from the app.
-        if(isSafeComicFolderName(savedFolder)){
-            const folderPath = getUploadFolderPath(savedFolder);
+        const topFolder = getComicTopFolder(savedFolder);
+        const sharedWith = topFolder ? await comic_table.count({
+            where: { [Op.or]: [{ savedFolder: topFolder }, { savedFolder: { [Op.like]: topFolder + '/%' } }] }
+        }) : 0;
+        if(topFolder && sharedWith === 0){
+            const folderPath = getUploadFolderPath(topFolder);
             const uploadsRoot = path.join(process.cwd(), 'public', 'uploads') + path.sep;
             if(folderPath.startsWith(uploadsRoot)){
                 await fs.promises.rm(folderPath, { recursive: true, force: true }).catch((error)=>{
@@ -358,7 +367,7 @@ const deleteComic = async (req,res)=>{
                 });
             }
         }else{
-            console.warn(`Deleted comic ${comicId} has an unexpected folder name, files kept: ${savedFolder}`);
+            console.warn(`Deleted comic ${comicId}: files kept (folder ${savedFolder} is unexpected or shared)`);
         }
         invalidateComicAssets(savedFolder);
         thumbnails.removeComicThumbs(comicId).catch(()=>{});
