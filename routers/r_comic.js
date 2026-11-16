@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const {addComicPages, deleteComic, deleteComicPage, PostComicUpload ,UpdateComicDetails ,showcomic_id,showgallery_comic,serveComicCover, checkIfisOnline, getUpdateComicDetails, getComicAiMetadata, getUploadStatus, getUploadStatusAPI, moveComicPage, PostChunkedUpload, requireLoginJson, servePageThumbnail, getUploadsPage, dismissUploadJob, PostShareTarget} = require('../controller/c_comic')
+const {addComicPages, deleteComic, deleteComicPage, PostComicUpload ,UpdateComicDetails ,showcomic_id,showgallery_comic,serveComicCover, checkIfisOnline, getUpdateComicDetails, getComicAiMetadata, getUploadStatus, getUploadStatusAPI, moveComicPage, PostChunkedUpload, getChunkedUploadStatus, cancelChunkedUpload, requireLoginJson, servePageThumbnail, getUploadsPage, dismissUploadJob, PostShareTarget} = require('../controller/c_comic')
 
 //Show gallery
 router.get("/",showgallery_comic)
@@ -21,6 +21,9 @@ router.post("/upload",PostComicUpload)
 
 // chunked upload endpoint
 router.post("/upload-chunk", checkIfisOnline, PostChunkedUpload)
+// which parts of a chunked upload arrived (resume after leaving the page), and cancel
+router.get("/upload-chunk/:uploadId", requireLoginJson, getChunkedUploadStatus)
+router.post("/upload-chunk/:uploadId/cancel", requireLoginJson, cancelChunkedUpload)
 
 // upload status page
 router.get("/status/:jobId", checkIfisOnline, getUploadStatus)

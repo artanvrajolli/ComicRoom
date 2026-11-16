@@ -317,11 +317,8 @@
     var isUploading = false;
     var cancelRequested = false;
     var currentXhr = null;
-    var resumeState = null; // { file, uploadId, totalChunks, nextChunk }
     var speedSamples = [];
     var uploadBar = _('uploadBar');
-    var autoResume = false;      // resume automatically when the page becomes visible again
-    var hiddenDuringUpload = false;
     var wakeLock = null;
 
     // iOS greys out files whose type it cannot map from accept (.cbz/.cbr/.rar usually), so let
@@ -359,7 +356,7 @@
     // ---------- floating action bar on phones ----------
     var barQuery = window.matchMedia ? window.matchMedia('(max-width: 991.98px)') : null;
     function updateBar() {
-        var floating = !!(barQuery && barQuery.matches) && (isUploading || !!selectedFile || !!resumeState);
+        var floating = !!(barQuery && barQuery.matches) && (isUploading || !!selectedFile || !!activeUploadId);
         uploadBar.classList.toggle('is-floating', floating);
         uploadBar.classList.toggle('is-uploading', isUploading);
         document.getElementById('uploadPage').style.setProperty('--up-bar-space', floating ? uploadBar.offsetHeight + 'px' : '0px');
@@ -372,7 +369,8 @@
 
     function updateUploadLabel() {
         if (isUploading) return;
-        uploadButton.querySelector('span').textContent = resumeState ? 'Resume upload' : 'Upload';
+        var paused = activeUploadId && findUpload(activeUploadId);
+        uploadButton.querySelector('span').textContent = paused && paused.state !== 'done' ? 'Resume upload' : 'Upload';
     }
 
     // ---------- helpers ----------
@@ -444,7 +442,6 @@
         cancelButton.hidden = !active;
         cancelButton.disabled = false;
         if (active) {
-            hiddenDuringUpload = document.visibilityState === 'hidden';
             window.addEventListener('beforeunload', beforeUnloadHandler);
             requestWakeLock();
         } else {
@@ -456,6 +453,9 @@
 
     function beforeUnloadHandler(event) {
         if (!isUploading) return undefined;
+        // Background uploads continue on the next page; only warn when they cannot
+        var current = activeUploadId && findUpload(activeUploadId);
+        if (current && current.persisted && window.CRUploads.persistent) return undefined;
         event.preventDefault();
         event.returnValue = 'An upload is in progress. Leaving now will cancel it.';
         return event.returnValue;
@@ -477,8 +477,7 @@
     function selectFile(file) {
         if (isUploading) return;
         hideError();
-        resumeState = null;
-        _('progressSection').hidden = true;
+        if (!activeUploadId) _('progressSection').hidden = true;
         setStatus('');
 
         if (!file) {
@@ -492,7 +491,6 @@
         _('fileIcon').className = (getExtension(file.name) === 'pdf' ? 'fas fa-file-pdf' : 'fas fa-file-archive') + ' up-file-icon';
         _('fileSummary').hidden = false;
 
-        autoResume = false;
         if (error) {
             selectedFile = null;
             uploadButton.disabled = true;
@@ -511,12 +509,10 @@
 
     function clearSelection() {
         selectedFile = null;
-        resumeState = null;
         fileInput.value = '';
         _('fileSummary').hidden = true;
         _('progressSection').hidden = true;
         uploadButton.disabled = true;
-        autoResume = false;
         hideError();
         updateUploadLabel();
         updateBar();
@@ -574,6 +570,11 @@
     window.addEventListener('drop', function (event) { event.preventDefault(); });
 
     // ---------- upload entry point ----------
+    // Chunked uploads are sent by the background uploader (public/script/uploadManager.js),
+    // which keeps going when you open other pages; this page only shows its progress.
+    var activeUploadId = null;   // the background upload this page is showing
+    var lastAnnounced = -1;
+
     function uploadFile() {
         if (isUploading) return;
         var file = selectedFile || (fileInput.files && fileInput.files[0]);
@@ -584,41 +585,164 @@
             return;
         }
         hideError();
-        autoResume = false;
-
-        // After a stopped upload the main button continues from the last confirmed part
-        if (resumeState && resumeState.file === file) {
-            startChunkedUpload(file, resumeState);
-            return;
-        }
 
         var methodInput = document.querySelector('input[name="uploadMethod"]:checked');
         var uploadMethod = methodInput ? methodInput.value : 'chunked';
-        if (uploadMethod === 'chunked') {
-            startChunkedUpload(file, null);
-        } else {
+        if (uploadMethod !== 'chunked' || !window.CRUploads) {
             startRegularUpload(file);
+            return;
         }
+
+        // The browser dropped the stored file of a paused upload: re-attach the same file
+        var waiting = activeUploadId && findUpload(activeUploadId);
+        if (waiting && waiting.state === 'needs-file' && window.CRUploads.attachFile(waiting.id, file)) {
+            follow(waiting.id, waiting);
+            return;
+        }
+
+        cancelRequested = false;
+        resetSpeed();
+        showSending(file.name, 0, file.size);
+        window.CRUploads.start(file).then(function (id) {
+            follow(id, findUpload(id));
+        });
     }
     window.uploadFile = uploadFile;
+
+    function findUpload(id) {
+        if (!window.CRUploads) return null;
+        return window.CRUploads.list().find(function (u) { return u.id === id; }) || null;
+    }
+
+    function showSending(name, sent, size) {
+        setUploading(true);
+        _('progressSection').hidden = false;
+        _('progressLabel').textContent = 'Uploading ' + name;
+        _('speedText').textContent = '';
+        _('etaText').textContent = '';
+        recordProgress(sent, size);
+    }
+
+    function follow(id, u) {
+        activeUploadId = id;
+        lastAnnounced = -1;
+        if (!u) return;
+        if (u.state === 'queued' || u.state === 'sending' || u.state === 'waiting') {
+            showSending(u.name, u.sent, u.size);
+            setStatus(window.CRUploads.persistent && u.persisted
+                ? 'Uploading. You can keep using ComicRoom: the upload continues on other pages.'
+                : 'Uploading. Keep this page open until the upload finishes.');
+        }
+        render(u);
+    }
+
+    // Draws one background upload's state on this page
+    function render(u) {
+        var percent = u.size ? (u.sent / u.size) * 100 : 0;
+        if (u.state === 'queued' || u.state === 'sending' || u.state === 'waiting') {
+            if (!isUploading) showSending(u.name, u.sent, u.size);
+            hideError();
+            recordProgress(u.sent, u.size);
+            if (u.state === 'waiting') {
+                _('progressLabel').textContent = 'Waiting for a connection';
+            } else if (u.sent >= u.size) {
+                _('progressLabel').textContent = 'Finishing upload on the server...';
+            } else {
+                _('progressLabel').textContent = 'Uploading ' + u.name;
+            }
+            if (u.error) setStatus(u.error);
+            var quarter = Math.floor(percent / 25);
+            if (!u.error && quarter !== lastAnnounced && quarter < 4) {
+                lastAnnounced = quarter;
+                setStatus(Math.floor(percent) + '% uploaded.' + (window.CRUploads.persistent && u.persisted ? ' You can open other pages meanwhile.' : ''));
+            }
+            return;
+        }
+        if (u.state === 'done') return; // handled by cr:upload-done
+
+        // stopped: error, needs-file, login
+        setUploading(false);
+        setProgress(percent, 'error');
+        _('progressSection').hidden = false;
+        _('speedText').textContent = '';
+        _('etaText').textContent = '';
+        _('loaded_n_total').textContent = formatBytes(u.sent) + ' of ' + formatBytes(u.size) + ' sent';
+        _('progressLabel').textContent = 'Upload stopped';
+        if (u.state === 'needs-file') {
+            showError('The browser no longer has access to "' + u.name + '". Choose the same file again and press Resume upload to continue from ' + Math.floor(percent) + '%.', false);
+        } else if (u.state === 'login') {
+            showError('Your session has expired. Log in again, then press Retry to continue from ' + Math.floor(percent) + '%.', true);
+        } else {
+            var message = u.error || 'Unknown error.';
+            if (!/[.!?]$/.test(message)) message += '.';
+            showError('The upload stopped at ' + Math.floor(percent) + '%. ' + message + ' Retry continues from where it stopped.', true);
+        }
+        updateUploadLabel();
+        updateBar();
+        setStatus('Upload stopped.');
+    }
+
+    document.addEventListener('cr:upload-progress', function (event) {
+        var list = (event.detail && event.detail.uploads) || [];
+        if (!activeUploadId) {
+            // Coming back to this page while an upload continues in the background
+            if (isUploading) return; // a regular (single request) upload is running
+            var pending = list.find(function (u) { return u.state !== 'done'; });
+            if (!pending) return;
+            follow(pending.id, pending);
+            return;
+        }
+        var u = list.find(function (item) { return item.id === activeUploadId; });
+        if (u) render(u);
+    });
+
+    document.addEventListener('cr:upload-done', function (event) {
+        var detail = event.detail || {};
+        if (!activeUploadId || detail.id !== activeUploadId) return;
+        setProgress(100, 'done');
+        _('speedText').textContent = '';
+        _('etaText').textContent = '';
+        _('progressLabel').textContent = 'Upload complete';
+        isUploading = false;
+        releaseWakeLock();
+        window.removeEventListener('beforeunload', beforeUnloadHandler);
+        cancelButton.hidden = true;
+        uploadButton.querySelector('span').textContent = 'Uploaded';
+        updateBar();
+        setStatus('Upload complete. Opening the processing status page...');
+        setTimeout(function () {
+            window.location.href = detail.jobId ? '/comic/status/' + encodeURIComponent(detail.jobId) : '/comic/uploads';
+        }, 900);
+    });
 
     retryButton.addEventListener('click', function () {
         if (isUploading) return;
         hideError();
-        autoResume = false;
-        if (resumeState) {
-            startChunkedUpload(resumeState.file, resumeState);
+        var u = activeUploadId && findUpload(activeUploadId);
+        if (u && u.state !== 'done') {
+            window.CRUploads.resume(u.id);
+            follow(u.id, findUpload(u.id));
         } else {
             uploadFile();
         }
     });
 
     cancelButton.addEventListener('click', function () {
-        if (!isUploading) return;
+        if (!isUploading && !activeUploadId) return;
         cancelRequested = true;
         cancelButton.disabled = true;
-        setStatus('Cancelling upload...');
-        if (currentXhr) currentXhr.abort();
+        if (currentXhr) { currentXhr.abort(); return; } // regular upload
+        if (activeUploadId && window.CRUploads) window.CRUploads.cancel(activeUploadId);
+        activeUploadId = null;
+        setUploading(false);
+        setProgress(0, 'error');
+        _('progressSection').hidden = true;
+        _('speedText').textContent = '';
+        _('etaText').textContent = '';
+        hideError();
+        updateUploadLabel();
+        updateBar();
+        setStatus('Upload cancelled. Your file is still selected; press Upload to start again.');
     });
 
     // ---------- progress / speed / ETA ----------
@@ -647,223 +771,10 @@
         }
     }
 
-    // ---------- chunked upload ----------
-    async function startChunkedUpload(file, resume) {
-        var uploadId = resume ? resume.uploadId : 'upload_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-        var totalChunks = resume ? resume.totalChunks : Math.ceil(file.size / CHUNK_SIZE);
-        var startChunk = resume ? resume.nextChunk : 0;
-        var jobId = null;
-
-        cancelRequested = false;
-        resumeState = null;
-        resetSpeed();
-        setUploading(true);
-        _('progressSection').hidden = false;
-        _('progressLabel').textContent = 'Uploading ' + file.name;
-        _('speedText').textContent = '';
-        _('etaText').textContent = '';
-        recordProgress(startChunk * CHUNK_SIZE, file.size);
-        setStatus(resume ? 'Resuming upload from part ' + (startChunk + 1) + ' of ' + totalChunks + '.' : 'Upload started.');
-
-        var lastAnnounced = -1;
-        for (var chunkIndex = startChunk; chunkIndex < totalChunks; chunkIndex++) {
-            try {
-                var result = await uploadChunkWithRetry(file, chunkIndex, totalChunks, uploadId, CHUNK_SIZE);
-                if (result && result.status === 'complete' && result.jobId) {
-                    jobId = result.jobId;
-                }
-                var done = Math.min((chunkIndex + 1) * CHUNK_SIZE, file.size);
-                recordProgress(done, file.size);
-                // Announce progress to screen readers in 25% steps only
-                var quarter = Math.floor((done / file.size) * 4);
-                if (quarter !== lastAnnounced && quarter < 4) {
-                    lastAnnounced = quarter;
-                    setStatus(Math.floor((done / file.size) * 100) + '% uploaded.');
-                }
-            } catch (error) {
-                currentXhr = null;
-                setUploading(false);
-                if (error && error.cancelled) {
-                    setProgress(0, 'error');
-                    _('progressSection').hidden = true;
-                    _('speedText').textContent = '';
-                    _('etaText').textContent = '';
-                    updateUploadLabel();
-                    updateBar();
-                    setStatus('Upload cancelled. Your file is still selected; press Upload to start again.');
-                    return;
-                }
-                console.error('Failed to upload chunk ' + chunkIndex + ':', error);
-                setProgress((chunkIndex * CHUNK_SIZE / file.size) * 100, 'error');
-                var fatal = error && error.fatal;
-                if (!fatal) {
-                    resumeState = { file: file, uploadId: uploadId, totalChunks: totalChunks, nextChunk: chunkIndex };
-                }
-                var message = (error && error.message) ? error.message : 'Unknown error.';
-                if (!/[.!?]$/.test(message)) message += '.';
-                _('speedText').textContent = '';
-                _('etaText').textContent = '';
-                _('loaded_n_total').textContent = formatBytes(chunkIndex * CHUNK_SIZE) + ' of ' + formatBytes(file.size) + ' sent';
-                _('progressLabel').textContent = fatal ? 'Upload failed' : 'Upload stopped';
-                updateUploadLabel();
-                updateBar();
-                if (fatal) {
-                    showError('The server did not accept this upload: ' + message, false);
-                } else if (hiddenDuringUpload || document.visibilityState === 'hidden') {
-                    // Most likely the phone suspended the page; carry on once it is back in front
-                    autoResume = document.visibilityState === 'hidden';
-                    showError('The upload paused at ' + Math.floor((chunkIndex * CHUNK_SIZE / file.size) * 100) + '% while ComicRoom was in the background. ' + (autoResume ? 'It continues when you return.' : 'Tap Resume upload to continue from where it stopped.'), true);
-                } else {
-                    showError('The upload stopped at ' + Math.floor((chunkIndex * CHUNK_SIZE / file.size) * 100) + '%. ' + message + ' Resume continues from where it stopped.', true);
-                }
-                setStatus('Upload failed.');
-                var box = _('errorBox');
-                // centre it: "nearest" would leave it under the floating bar on phones
-                if (box.scrollIntoView) box.scrollIntoView({ block: 'center', behavior: 'smooth' });
-                return;
-            }
-        }
-
-        currentXhr = null;
-        setProgress(100, 'done');
-        _('speedText').textContent = '';
-        _('etaText').textContent = '';
-        _('progressLabel').textContent = 'Upload complete';
-        isUploading = false;
-        releaseWakeLock();
-        window.removeEventListener('beforeunload', beforeUnloadHandler);
-        cancelButton.hidden = true;
-        uploadButton.querySelector('span').textContent = 'Uploaded';
-        updateBar();
-        setStatus('Upload complete. Opening the processing status page...');
-
-        setTimeout(function () {
-            window.location.href = jobId ? '/comic/status/' + encodeURIComponent(jobId) : '/comic';
-        }, 900);
-    }
-
-    function wait(ms) {
-        return new Promise(function (resolve, reject) {
-            var elapsed = 0;
-            var timer = setInterval(function () {
-                elapsed += 200;
-                if (cancelRequested) {
-                    clearInterval(timer);
-                    var err = new Error('Upload cancelled');
-                    err.cancelled = true;
-                    reject(err);
-                } else if (elapsed >= ms) {
-                    clearInterval(timer);
-                    resolve();
-                }
-            }, 200);
-        });
-    }
-
-    async function uploadChunkWithRetry(file, chunkIndex, totalChunks, uploadId, chunkSize) {
-        var retries = 0;
-        while (true) {
-            try {
-                return await uploadChunk(file, chunkIndex, totalChunks, uploadId, chunkSize);
-            } catch (error) {
-                if (error.cancelled || error.fatal) throw error;
-                retries++;
-                if (retries >= MAX_RETRIES) throw error;
-                var delay = Math.pow(2, retries) * 1000;
-                setStatus('Connection problem (' + error.message + '). Retrying in ' + (delay / 1000) + 's...');
-                await wait(delay);
-            }
-        }
-    }
-
-    function uploadChunk(file, chunkIndex, totalChunks, uploadId, chunkSize) {
-        return new Promise(function (resolve, reject) {
-            if (cancelRequested) {
-                var c = new Error('Upload cancelled');
-                c.cancelled = true;
-                reject(c);
-                return;
-            }
-            var start = chunkIndex * chunkSize;
-            var end = Math.min(start + chunkSize, file.size);
-            var chunk = file.slice(start, end);
-
-            var formdata = new FormData();
-            formdata.append("chunk", chunk);
-            formdata.append("chunkIndex", chunkIndex);
-            formdata.append("totalChunks", totalChunks);
-            formdata.append("fileName", file.name);
-            formdata.append("uploadId", uploadId);
-
-            var xhr = new XMLHttpRequest();
-            currentXhr = xhr;
-            var isLastChunk = chunkIndex === totalChunks - 1;
-            // 60s per chunk; the last one also waits for the server to assemble the file
-            xhr.timeout = isLastChunk ? 10 * 60 * 1000 : 60000;
-
-            if (isLastChunk) {
-                xhr.upload.onload = function () {
-                    _('progressLabel').textContent = 'Finishing upload on the server...';
-                    setStatus('All data sent. The server is putting the file together...');
-                };
-            }
-
-            xhr.upload.onprogress = function (event) {
-                if (!event.lengthComputable) return;
-                var sent = Math.min(event.loaded / event.total, 1) * (end - start);
-                recordProgress(start + sent, file.size);
-            };
-
-            xhr.onload = function () {
-                var data = null;
-                try { data = JSON.parse(xhr.responseText); } catch (e) { data = null; }
-                if (xhr.status === 200) {
-                    if (data) resolve(data);
-                    else reject(new Error('The server sent an unexpected response.'));
-                    return;
-                }
-                var err;
-                if (xhr.status === 401) {
-                    err = new Error('Your session has expired. Log in again in another tab, then retry.');
-                } else if (xhr.status === 413) {
-                    err = new Error('The server rejected this part as too large.');
-                    err.fatal = true;
-                } else if (xhr.status === 400) {
-                    err = new Error((data && data.error) ? data.error : 'The server rejected the upload.');
-                    err.fatal = true;
-                } else {
-                    err = new Error((data && data.error) ? data.error : 'Server error (HTTP ' + xhr.status + ').');
-                }
-                reject(err);
-            };
-
-            xhr.onerror = function () { reject(new Error('Network error. Check your connection.')); };
-            xhr.ontimeout = function () { reject(new Error('The server took too long to respond.')); };
-            xhr.onabort = function () {
-                var err = new Error('Upload cancelled');
-                err.cancelled = true;
-                reject(err);
-            };
-
-            xhr.open("POST", "/comic/upload-chunk");
-            xhr.send(formdata);
-        });
-    }
-
     // ---------- background / foreground ----------
     document.addEventListener('visibilitychange', function () {
-        if (document.visibilityState === 'hidden') {
-            if (isUploading) hiddenDuringUpload = true;
-            return;
-        }
         // The browser drops the wake lock whenever the page is hidden
-        if (isUploading) requestWakeLock();
-        if (autoResume && resumeState && !isUploading) {
-            autoResume = false;
-            hideError();
-            setStatus('Welcome back. Resuming the upload...');
-            startChunkedUpload(resumeState.file, resumeState);
-        }
+        if (document.visibilityState === 'visible' && isUploading) requestWakeLock();
     });
 
     // ---------- regular (single request) upload, kept as a fallback ----------

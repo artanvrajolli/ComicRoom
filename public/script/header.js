@@ -167,9 +167,25 @@
         }
     }
 
+    // Files still being sent from this browser (public/script/uploadManager.js)
+    var sendingUploads = [];
+    document.addEventListener('cr:upload-progress', function (event) {
+        var list = (event.detail && event.detail.uploads) || [];
+        sendingUploads = list.filter(function (u) { return u.state !== 'done'; });
+        updateNotificationUI();
+    });
+
+    function sendingSummary() {
+        if (!sendingUploads.length) return '';
+        var u = sendingUploads[0];
+        var percent = u.size ? Math.floor((u.sent / u.size) * 100) : 0;
+        var label = u.state === 'needs-file' || u.state === 'error' || u.state === 'login' ? 'paused' : percent + '%';
+        return 'Sending ' + u.name + ' (' + label + ')' + (sendingUploads.length > 1 ? ' +' + (sendingUploads.length - 1) + ' more' : '');
+    }
+
     function updateNotificationUI() {
         var unviewed = completedNotifications.filter(function (n) { return !n.viewed; }).length;
-        var activeCount = activeJobs.length;
+        var activeCount = activeJobs.length + sendingUploads.length;
         updateTabBadge(activeCount, unviewed);
 
         var notificationArea = document.getElementById('uploadNotification');
@@ -210,7 +226,10 @@
                 var spinner = el('i', 'fas fa-circle-notch fa-spin');
                 spinner.setAttribute('aria-hidden', 'true');
                 activeLine.appendChild(spinner);
-                activeLine.appendChild(document.createTextNode(' ' + plural(activeCount, 'upload', 'uploads') + ' in progress'));
+                var sendingText = sendingSummary();
+                var processing = activeJobs.length;
+                var text = sendingText + (sendingText && processing ? ' · ' : '') + (processing ? plural(processing, 'upload', 'uploads') + ' processing' : '');
+                activeLine.appendChild(document.createTextNode(' ' + text));
             }
         }
         var clearButton = document.getElementById('notificationClear');

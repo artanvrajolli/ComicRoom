@@ -140,7 +140,18 @@ let server = null;
 
 const startServer = async () => {
     try {
-        await db.authenticate();
+        // The first connection can time out while the slow disk keeps Node busy
+        // at start-up; retry a few times instead of exiting.
+        for (let attempt = 1; ; attempt++) {
+            try {
+                await db.authenticate();
+                break;
+            } catch (err) {
+                if (attempt >= 5) throw err;
+                console.error(`Database connection failed (attempt ${attempt}/5): ${err.message}. Retrying in 5s...`);
+                await new Promise(resolve => setTimeout(resolve, 5000));
+            }
+        }
         console.log("Database [Online]");
         await db.sync();
         await sessionStore.sync();
@@ -180,54 +191,37 @@ const scheduleThumbnailPrewarm = () => {
 
 startServer();
 
-// clean tmp folder everytime on starup server
-fs.readdir("public/tmp", (err, files) => {
-    if (err) {
-        files = [];
-    }
-
-    for (const file of files) {
-        const filePath = process.cwd() + "/public/tmp/" + file;
-        
-        // Check if it's a directory (chunks folder)
-        try {
-            if (fs.lstatSync(filePath).isDirectory() && file === 'chunks') {
-                // Clean up old chunk directories
-                const chunkDirs = fs.readdirSync(filePath);
-                for (const chunkDir of chunkDirs) {
-                    const chunkDirPath = filePath + "/" + chunkDir;
-                    try {
-                        const chunkFiles = fs.readdirSync(chunkDirPath);
-                        for (const chunkFile of chunkFiles) {
-                            fs.unlinkSync(chunkDirPath + "/" + chunkFile);
-                        }
-                        fs.rmdirSync(chunkDirPath);
-                    } catch (chunkErr) {
-                        console.log('Error cleaning chunk directory:', chunkErr.message);
-                    }
+// Start-up cleanup of public/tmp, without blocking the event loop.
+// Only removes leftovers older than a day: recent files may belong to uploads
+// that are queued for processing, and public/tmp/chunks holds parts of uploads
+// the browser continues after a restart (stale ones are removed hourly by
+// utils/jobProcessor.js).
+const TMP_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+(async () => {
+    const tmpDir = path.join(process.cwd(), "public", "tmp");
+    await fs.promises.mkdir(path.join(tmpDir, "chunks"), { recursive: true }).catch(() => {});
+    await fs.promises.mkdir(path.join(process.cwd(), "public", "uploads"), { recursive: true }).catch(() => {});
+    let removed = 0;
+    try {
+        const entries = await fs.promises.readdir(tmpDir, { withFileTypes: true });
+        for (const entry of entries) {
+            if (!entry.isFile()) continue;
+            const filePath = path.join(tmpDir, entry.name);
+            try {
+                const stats = await fs.promises.stat(filePath);
+                if (Date.now() - stats.mtimeMs > TMP_MAX_AGE_MS) {
+                    await fs.promises.unlink(filePath);
+                    removed++;
                 }
-            } else if (!fs.lstatSync(filePath).isDirectory()) {
-                // Regular file cleanup
-                fs.unlink(filePath, err => {
-                    if (err) throw err;
-                });
+            } catch (err) {
+                if (err.code !== 'ENOENT') console.log('Error cleaning tmp file:', err.message);
             }
-        } catch (statErr) {
-            // If stat fails, try to unlink as regular file
-            fs.unlink(filePath, err => {
-                if (err && err.code !== 'ENOENT') console.log('Error cleaning file:', err.message);
-            });
         }
+    } catch (err) {
+        console.log('Could not read tmp folder:', err.message);
     }
-    
-    // Ensure chunks directory exists
-    if (!fs.existsSync("public/tmp/chunks")) {
-        fs.mkdirSync("public/tmp/chunks", { recursive: true });
-    }
-    
-    fs.mkdir("public/uploads", (err) => { }); // create file uploads to allow upload comics
-    console.log("TMP folder is clean")
-});
+    console.log(`TMP folder checked (${removed} old file${removed === 1 ? '' : 's'} removed)`);
+})();
 
 const shutdown = () => {
     console.log('Shutting down gracefully...');

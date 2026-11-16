@@ -1,7 +1,7 @@
 const CACHE_PREFIX = 'comicroom-';
 // Bump SHELL_CACHE when shell assets change. Do NOT bump PAGES/IMAGE/META:
 // that would wipe comics users saved for offline reading.
-const SHELL_CACHE = 'comicroom-shell-v4';
+const SHELL_CACHE = 'comicroom-shell-v6';
 const PAGES_CACHE = 'comicroom-pages-v1';
 const IMAGE_CACHE = 'comicroom-images-v1';
 const META_CACHE = 'comicroom-meta-v1';
@@ -48,7 +48,8 @@ const SHELL_ASSETS = [
     '/public/css/webfonts/fa-solid-900.woff2',
     '/public/css/webfonts/fa-regular-400.woff2',
     '/public/css/webfonts/fa-brands-400.woff2',
-    '/public/script/header.js?v=3',
+    '/public/script/header.js?v=4',
+    '/public/script/uploadManager.js?v=2',
     '/public/script/jQuery.js',
     '/public/icons/icon-192.png',
     '/public/icons/icon-512.png',

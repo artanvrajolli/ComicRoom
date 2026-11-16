@@ -952,12 +952,109 @@ const PostShareTarget = async (req,res)=>{
     }
 }
 
+// ---------- chunked uploads ----------
+// The browser sends a file in parts (public/script/uploadManager.js). Parts land in
+// public/tmp/chunks/<uploadId>/chunk_<n>; a ".owner" file records the user. The
+// browser may leave and come back (it continues on any page), so it can ask which
+// parts arrived, and a repeated final part must not start a second job.
+const UPLOAD_ID_REGEX = /^[A-Za-z0-9_-]{1,100}$/;
+const CHUNK_PREFIX = 'chunk_';
+const assemblingUploads = new Set();
+
+const chunksDirFor = (uploadId)=>path.join(process.cwd(), 'public', 'tmp', 'chunks', uploadId);
+
+// The job created for an upload that was already assembled (tempFilePath starts with the uploadId).
+const findJobForUpload = async (userId, uploadId)=>{
+    const prefix = path.join(process.cwd(), 'public', 'tmp', uploadId + '_');
+    return UploadJob.findOne({
+        attributes: ['jobId'],
+        where: { userId, tempFilePath: { [Op.like]: prefix.replace(/[\\%_]/g, '\\$&') + '%' } },
+        order: [['id','DESC']]
+    });
+}
+
+const readChunkOwner = async (chunksDir)=>{
+    try{
+        return Number.parseInt(await fs.promises.readFile(path.join(chunksDir, '.owner'), 'utf8'), 10);
+    }catch(error){
+        return null;
+    }
+}
+
+const listReceivedChunks = async (chunksDir)=>{
+    let names = [];
+    try{ names = await fs.promises.readdir(chunksDir); }catch(error){ return []; }
+    const chunks = [];
+    for(const name of names){
+        if(!name.startsWith(CHUNK_PREFIX)) continue;
+        const index = Number.parseInt(name.slice(CHUNK_PREFIX.length), 10);
+        if(!Number.isInteger(index)) continue;
+        try{
+            const stats = await fs.promises.stat(path.join(chunksDir, name));
+            chunks.push({ index, size: stats.size });
+        }catch(error){}
+    }
+    return chunks.sort((a, b)=>a.index - b.index);
+}
+
+// GET /comic/upload-chunk/:uploadId -> { status: 'complete', jobId } | { status: 'assembling' }
+//                                     | { status: 'partial', received: [{index, size}] } | { status: 'none' }
+const getChunkedUploadStatus = async (req, res)=>{
+    try{
+        const uploadId = String(req.params.uploadId || '');
+        if(!UPLOAD_ID_REGEX.test(uploadId)){
+            return res.status(400).json({ error: "Invalid upload id" });
+        }
+        const userId = req.session.userData.id;
+        if(assemblingUploads.has(uploadId)){
+            return res.json({ status: 'assembling' });
+        }
+        const job = await findJobForUpload(userId, uploadId);
+        if(job){
+            return res.json({ status: 'complete', jobId: job.jobId });
+        }
+        const chunksDir = chunksDirFor(uploadId);
+        const owner = await readChunkOwner(chunksDir);
+        if(owner !== null && owner !== userId){
+            return res.status(403).json({ error: "Access denied" });
+        }
+        const received = await listReceivedChunks(chunksDir);
+        res.json(received.length ? { status: 'partial', received } : { status: 'none' });
+    }catch(error){
+        console.error('Chunk status error:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+}
+
+// POST /comic/upload-chunk/:uploadId/cancel -> removes the parts received so far
+const cancelChunkedUpload = async (req, res)=>{
+    try{
+        const uploadId = String(req.params.uploadId || '');
+        if(!UPLOAD_ID_REGEX.test(uploadId)){
+            return res.status(400).json({ error: "Invalid upload id" });
+        }
+        const chunksDir = chunksDirFor(uploadId);
+        const owner = await readChunkOwner(chunksDir);
+        if(owner !== null && owner !== req.session.userData.id){
+            return res.status(403).json({ error: "Access denied" });
+        }
+        if(!assemblingUploads.has(uploadId)){
+            await fs.promises.rm(chunksDir, { recursive: true, force: true });
+        }
+        res.json({ ok: true });
+    }catch(error){
+        console.error('Chunk cancel error:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+}
+
 const PostChunkedUpload = async (req, res) => {
     try {
         // Check authentication
         if (!req.session.userData) {
             return res.status(401).json({ error: "Authentication required" });
         }
+        const userId = req.session.userData.id;
 
         const { chunkIndex, totalChunks, fileName, uploadId } = req.body;
         const chunk = req.files?.chunk;
@@ -968,7 +1065,7 @@ const PostChunkedUpload = async (req, res) => {
 
         const chunkNumber = Number.parseInt(chunkIndex, 10);
         const chunkTotal = Number.parseInt(totalChunks, 10);
-        if (!/^[A-Za-z0-9_-]{1,100}$/.test(String(uploadId)) || !Number.isInteger(chunkTotal) || chunkTotal < 1 || chunkTotal > 100000 || !Number.isInteger(chunkNumber) || chunkNumber < 0 || chunkNumber >= chunkTotal) {
+        if (!UPLOAD_ID_REGEX.test(String(uploadId)) || !Number.isInteger(chunkTotal) || chunkTotal < 1 || chunkTotal > 100000 || !Number.isInteger(chunkNumber) || chunkNumber < 0 || chunkNumber >= chunkTotal) {
             return res.status(400).json({ error: "Invalid upload parameters" });
         }
 
@@ -978,58 +1075,74 @@ const PostChunkedUpload = async (req, res) => {
             return res.status(400).json({ error: "Only .cbz, .cbr, .zip, .rar and .pdf files are allowed" });
         }
 
-        // Create chunks directory if it doesn't exist
-        const chunksDir = process.cwd() + `/public/tmp/chunks/${uploadId}`;
+        // A part repeated after the file was already put together (the answer to
+        // the last part got lost on the way back): report the existing job.
+        if (assemblingUploads.has(uploadId)) {
+            return res.json({ status: 'assembling' });
+        }
+        const existingJob = await findJobForUpload(userId, uploadId);
+        if (existingJob) {
+            return res.json({ status: 'complete', jobId: existingJob.jobId, message: 'File already uploaded' });
+        }
+
+        const chunksDir = chunksDirFor(uploadId);
         await fs.promises.mkdir(chunksDir, { recursive: true });
+        const owner = await readChunkOwner(chunksDir);
+        if (owner === null) {
+            await fs.promises.writeFile(path.join(chunksDir, '.owner'), String(userId));
+        } else if (owner !== userId) {
+            return res.status(403).json({ error: "Access denied" });
+        }
 
         // Save the chunk
-        const chunkPath = `${chunksDir}/chunk_${chunkNumber}`;
+        const chunkPath = path.join(chunksDir, CHUNK_PREFIX + chunkNumber);
         await chunk.mv(chunkPath);
 
         // Check if all chunks are received
-        const chunkFiles = await fs.promises.readdir(chunksDir);
-        if (chunkFiles.length === chunkTotal) {
-            console.log(`All chunks received for upload ${uploadId}, assembling file...`);
-
-            // Assemble the file by streaming each chunk (no sync reads on the request path)
-            const finalFilePath = process.cwd() + `/public/tmp/${uploadId}_${uploadInfo.safeFileName}`;
-            const writeStream = fs.createWriteStream(finalFilePath);
+        const received = await listReceivedChunks(chunksDir);
+        const allThere = received.length === chunkTotal && received.every((part, index)=>part.index === index);
+        if (allThere && !assemblingUploads.has(uploadId)) {
+            assemblingUploads.add(uploadId);
             try {
-                for (let i = 0; i < chunkTotal; i++) {
-                    const partPath = `${chunksDir}/chunk_${i}`;
-                    await pipeline(fs.createReadStream(partPath), writeStream, { end: false });
+                console.log(`All chunks received for upload ${uploadId}, assembling file...`);
+
+                // Assemble the file by streaming each chunk (no sync reads on the request path)
+                const finalFilePath = path.join(process.cwd(), 'public', 'tmp', `${uploadId}_${uploadInfo.safeFileName}`);
+                const writeStream = fs.createWriteStream(finalFilePath);
+                try {
+                    for (let i = 0; i < chunkTotal; i++) {
+                        await pipeline(fs.createReadStream(path.join(chunksDir, CHUNK_PREFIX + i)), writeStream, { end: false });
+                    }
+                } finally {
+                    writeStream.end();
                 }
-            } finally {
-                writeStream.end();
-            }
+                if (!writeStream.writableFinished) {
+                    await new Promise((resolve, reject) => {
+                        writeStream.once('finish', resolve);
+                        writeStream.once('error', reject);
+                    });
+                }
 
-            // Wait for the write stream to finish
-            if (!writeStream.writableFinished) {
-                await new Promise((resolve, reject) => {
-                    writeStream.once('finish', resolve);
-                    writeStream.once('error', reject);
+                await fs.promises.rm(chunksDir, { recursive: true, force: true });
+
+                // Create a job for processing
+                const job = await queueUploadJob(userId, uploadInfo, finalFilePath);
+
+                return res.json({
+                    status: 'complete',
+                    jobId: job.jobId,
+                    message: 'File uploaded successfully and processing started'
                 });
+            } finally {
+                assemblingUploads.delete(uploadId);
             }
-
-            // Clean up chunks directory
-            await fs.promises.rm(chunksDir, { recursive: true, force: true });
-
-            // Create a job for processing
-            const job = await queueUploadJob(req.session.userData.id, uploadInfo, finalFilePath);
-
-            return res.json({
-                status: 'complete',
-                jobId: job.jobId,
-                message: 'File uploaded successfully and processing started'
-            });
-        } else {
-            return res.json({
-                status: 'chunk_received',
-                chunkIndex: chunkNumber,
-                totalReceived: chunkFiles.length,
-                totalExpected: totalChunks
-            });
         }
+        return res.json({
+            status: 'chunk_received',
+            chunkIndex: chunkNumber,
+            totalReceived: received.length,
+            totalExpected: chunkTotal
+        });
 
     } catch (error) {
         console.error('Chunked upload error:', error);
@@ -1056,6 +1169,8 @@ module.exports = {
     getUploadStatusAPI,
     getActiveJobs,
     PostChunkedUpload,
+    getChunkedUploadStatus,
+    cancelChunkedUpload,
     requireLoginJson,
     servePageThumbnail,
     getUploadsPage,
