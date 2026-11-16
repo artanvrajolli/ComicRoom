@@ -100,6 +100,20 @@
         emit();
     }
 
+    // Last amount the server confirmed, so a new page shows it at once instead of
+    // 0 while it asks the server again. Kept outside IndexedDB: rewriting the
+    // record there could copy the whole stored file each time.
+    var SENT_KEY = 'cr-upload-sent:';
+    function rememberSent(id, bytes) {
+        try { localStorage.setItem(SENT_KEY + id, String(bytes)); } catch (e) {}
+    }
+    function recalledSent(id) {
+        try { return Number(localStorage.getItem(SENT_KEY + id)) || 0; } catch (e) { return 0; }
+    }
+    function forgetSent(id) {
+        try { localStorage.removeItem(SENT_KEY + id); } catch (e) {}
+    }
+
     function getFile(u) {
         return u.record.file || memoryFiles.get(u.record.id) || null;
     }
@@ -107,6 +121,11 @@
     // ---------- server calls ----------
     function getJson(url, options) {
         return fetch(url, Object.assign({ credentials: 'same-origin', headers: { Accept: 'application/json' } }, options || {}))
+            .catch(function () {
+                var e = new Error('Cannot reach the server.');
+                e.network = true;
+                throw e;
+            })
             .then(function (response) {
                 if (response.status === 401 || response.redirected) {
                     var err = new Error('Log in again to continue the upload.');
@@ -117,6 +136,7 @@
                     if (!response.ok) {
                         var e = new Error(data.error || ('Server error (HTTP ' + response.status + ').'));
                         e.status = response.status;
+                        e.network = response.status === 502 || response.status === 503 || response.status === 504;
                         throw e;
                     }
                     return data;
@@ -159,11 +179,13 @@
                 } else {
                     err = new Error((data && data.error) || ('Server error (HTTP ' + xhr.status + ').'));
                     err.fatal = xhr.status === 400 || xhr.status === 403 || xhr.status === 413;
+                    // 502/503/504: the app is restarting behind the proxy
+                    err.network = xhr.status === 0 || xhr.status === 502 || xhr.status === 503 || xhr.status === 504;
                 }
                 reject(err);
             };
-            xhr.onerror = function () { currentXhr = null; reject(new Error('Network error. Check your connection.')); };
-            xhr.ontimeout = function () { currentXhr = null; reject(new Error('The server took too long to respond.')); };
+            xhr.onerror = function () { currentXhr = null; var e = new Error('Cannot reach the server.'); e.network = true; reject(e); };
+            xhr.ontimeout = function () { currentXhr = null; var e = new Error('The server took too long to respond.'); e.network = true; reject(e); };
             xhr.onabort = function () { currentXhr = null; var e = new Error('stopped'); e.aborted = true; reject(e); };
             xhr.open('POST', '/comic/upload-chunk');
             xhr.setRequestHeader('Accept', 'application/json');
@@ -181,10 +203,11 @@
 
         currentId = record.id;
         setState(u, 'sending');
-        var status = await getJson('/comic/upload-chunk/' + encodeURIComponent(record.id));
+        var statusUrl = '/comic/upload-chunk/' + encodeURIComponent(record.id);
+        var status = await patiently(u, function () { return getJson(statusUrl); });
         while (status.status === 'assembling') {
             await sleep(3000);
-            status = await getJson('/comic/upload-chunk/' + encodeURIComponent(record.id));
+            status = await patiently(u, function () { return getJson(statusUrl); });
         }
         if (status.status === 'complete') return finish(u, status.jobId);
 
@@ -195,6 +218,7 @@
         var confirmed = 0;
         have.forEach(function (index) { confirmed += expectedSize(record, index); });
         u.sent = confirmed;
+        rememberSent(record.id, confirmed);
         emit();
 
         for (var index = 0; index < record.totalChunks; index++) {
@@ -210,14 +234,16 @@
                         var now = Date.now();
                         if (now - lastEmit > 250) { lastEmit = now; emit(); }
                     });
+                    serverWaits = 0;
                     confirmed += expectedSize(record, index);
                     u.sent = confirmed;
+                    rememberSent(record.id, confirmed);
                     emit();
                     if (result.status === 'complete' && result.jobId) return finish(u, result.jobId);
                     if (result.status === 'assembling') {
                         while (true) {
                             await sleep(3000);
-                            var again = await getJson('/comic/upload-chunk/' + encodeURIComponent(record.id));
+                            var again = await patiently(u, function () { return getJson(statusUrl); });
                             if (again.status === 'complete') return finish(u, again.jobId);
                             if (again.status !== 'assembling') break;
                         }
@@ -232,6 +258,11 @@
                         setState(u, 'sending');
                         continue;
                     }
+                    if (error.network) {
+                        // Server restarting or connection dropped: keep trying, without a limit
+                        await waitForServer(u, error);
+                        continue;
+                    }
                     attempt++;
                     if (attempt >= MAX_RETRIES) throw error;
                     setState(u, 'sending', error.message + ' Retrying...');
@@ -240,9 +271,33 @@
             }
         }
         // Every part sent but no job reported (e.g. the reply to the last part got lost)
-        var final = await getJson('/comic/upload-chunk/' + encodeURIComponent(record.id));
+        var final = await patiently(u, function () { return getJson(statusUrl); });
         if (final.status === 'complete') return finish(u, final.jobId);
         throw new Error('The server did not confirm the upload. Try again.');
+    }
+
+    // Waits with growing pauses (up to 30 s) until the server answers again.
+    var serverWaits = 0;
+    async function waitForServer(u, error) {
+        serverWaits++;
+        setState(u, 'waiting', error.message + ' Trying again...');
+        if (navigator.onLine === false) await waitForOnline();
+        await sleep(Math.min(30000, 2000 * Math.pow(1.6, Math.min(serverWaits, 8))));
+        setState(u, 'sending');
+    }
+
+    // Runs a status request, retrying through network failures (e.g. a server restart).
+    async function patiently(u, request) {
+        while (true) {
+            try {
+                var result = await request();
+                serverWaits = 0;
+                return result;
+            } catch (error) {
+                if (!error.network) throw error;
+                await waitForServer(u, error);
+            }
+        }
     }
 
     function waitForOnline() {
@@ -259,6 +314,7 @@
         u.state = 'done';
         memoryFiles.delete(record.id);
         dbDelete(record.id).catch(function () {});
+        forgetSent(record.id);
         emit();
         document.dispatchEvent(new CustomEvent('cr:upload-done', { detail: { id: record.id, name: record.name, jobId: jobId } }));
         if (channel) { try { channel.postMessage({ type: 'done', id: record.id, name: record.name, jobId: jobId }); } catch (e) {} }
@@ -345,6 +401,7 @@
         memoryFiles.delete(id);
         if (currentId === id && currentXhr) { try { currentXhr.abort(); } catch (e) {} }
         dbDelete(id).catch(function () {});
+        forgetSent(id);
         if (channel) { try { channel.postMessage({ type: 'cancel', id: id }); } catch (e) {} }
         fetch('/comic/upload-chunk/' + encodeURIComponent(id) + '/cancel', { method: 'POST', credentials: 'same-origin' }).catch(function () {});
         emit();
@@ -432,7 +489,7 @@
                 if (uploads.has(record.id)) return;
                 record.persisted = true;
                 var hasFile = !!record.file;
-                uploads.set(record.id, { record: record, state: hasFile ? 'queued' : 'needs-file', sent: 0, error: hasFile ? '' : 'Choose the file again to continue.' });
+                uploads.set(record.id, { record: record, state: hasFile ? 'queued' : 'needs-file', sent: Math.min(recalledSent(record.id), record.size), error: hasFile ? '' : 'Choose the file again to continue.' });
             });
             emit();
             pump();

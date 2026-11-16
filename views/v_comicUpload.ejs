@@ -644,7 +644,7 @@
             hideError();
             recordProgress(u.sent, u.size);
             if (u.state === 'waiting') {
-                _('progressLabel').textContent = 'Waiting for a connection';
+                _('progressLabel').textContent = 'Reconnecting, the upload continues by itself';
             } else if (u.sent >= u.size) {
                 _('progressLabel').textContent = 'Finishing upload on the server...';
             } else {

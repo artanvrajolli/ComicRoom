@@ -499,7 +499,7 @@
         while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
         return v.toFixed(i === 0 ? 0 : (v < 10 ? 1 : 0)) + ' ' + units[i];
     }
-    var SENDING_LABELS = { queued: 'Sending', sending: 'Sending', waiting: 'Offline', error: 'Paused', 'needs-file': 'Paused', login: 'Paused' };
+    var SENDING_LABELS = { queued: 'Sending', sending: 'Sending', waiting: 'Reconnecting', error: 'Paused', 'needs-file': 'Paused', login: 'Paused' };
     function sendingCard(u) {
         var li = el('li', 'ul-job cr-card');
         li.setAttribute('data-upload-id', u.id);
@@ -527,7 +527,7 @@
         var percent = u.size ? Math.floor((u.sent / u.size) * 100) : 0;
         var pr = el('div', 'ul-progress');
         var row = el('div', 'ul-progress-row');
-        row.appendChild(el('span', null, u.state === 'waiting' ? 'Waiting for a connection' : (active ? (u.sent >= u.size ? 'Finishing on the server' : 'Sending the file') : 'Stopped')));
+        row.appendChild(el('span', null, u.state === 'waiting' ? 'Reconnecting, it continues by itself' : (active ? (u.sent >= u.size ? 'Finishing on the server' : 'Sending the file') : 'Stopped')));
         row.appendChild(el('span', 'ul-pct', percent + '%'));
         pr.appendChild(row);
         var bar = el('div', 'ul-bar');
