@@ -184,6 +184,42 @@
     <div class="alert alert-warning up-alert" role="alert"><%=msg%></div>
     <% } %>
 
+    <section class="cr-card mb-3" aria-labelledby="urlImportTitle">
+        <h2 id="urlImportTitle" class="h5">Import from URL</h2>
+        <p class="up-muted small">Paste a public chapter or reader page, then choose its images. Imports one page at a time; sites requiring a login or blocking image downloads may not work.</p>
+        <form id="urlDiscoverForm">
+            <label for="importUrl" class="form-label">Chapter URL</label>
+            <input id="importUrl" class="form-control mb-3" type="url" required maxlength="4096" placeholder="https://source.example/comic/chapter-1">
+            <label for="importMethod" class="form-label">Find images using</label>
+            <select id="importMethod" class="form-select" aria-describedby="importMethodHelp">
+                <option value="scrape" selected>Scrape (/v2/scrape)</option>
+                <option value="agent">Agent (/v2/agent)</option>
+            </select>
+            <p id="importMethodHelp" class="small up-muted mt-2">Scrape reads the page's image links. Agent uses AI to choose original images and may take longer.</p>
+            <details class="mb-3">
+                <summary>Image filter (optional)</summary>
+                <label for="importSelector" class="form-label mt-2">CSS selector for the reader images or container</label>
+                <input id="importSelector" class="form-control" maxlength="300" placeholder=".chapter-content img">
+            </details>
+            <button id="findUrlImages" class="btn btn-accent" type="submit">Find images</button>
+        </form>
+        <p id="urlImportMessage" class="small mt-3 mb-0" role="status" aria-live="polite"></p>
+        <form id="urlImagesForm" hidden>
+            <label for="urlComicTitle" class="form-label mt-3">Comic title</label>
+            <input id="urlComicTitle" class="form-control" required maxlength="200">
+            <p class="small up-muted mt-3">Full-size originals are used when linked by the page; thumbnail-only URLs are excluded. Uncheck ads and other unwanted images. Pages follow the order below; you can reorder them after import. Protected sites may not show previews here.</p>
+            <button id="urlSelectAll" class="btn btn-outline-light mb-2" type="button">Select all</button>
+            <button id="urlSelectNone" class="btn btn-outline-light mb-2" type="button">Clear selection</button>
+            <div id="urlImageList" style="max-height:480px;overflow:auto"></div>
+            <div class="up-private form-check my-3">
+                <input id="urlPrivate" class="form-check-input" type="checkbox">
+                <label for="urlPrivate" class="form-check-label">Keep private</label>
+                <div class="form-text up-muted">Only you will see and read it.</div>
+            </div>
+            <button id="startUrlImport" class="btn btn-accent" type="submit">Import selected images</button>
+        </form>
+    </section>
+
     <section class="cr-card" aria-labelledby="uploadCardTitle">
         <h2 id="uploadCardTitle" class="visually-hidden">Choose a file</h2>
         <form id="uploadForm" method="post" enctype="multipart/form-data" onsubmit="return false;" novalidate>
@@ -841,4 +877,5 @@
     }
 })();
 </script>
+<script src="/public/script/urlImport.js?v=2" defer></script>
 <%-include("footer")%>

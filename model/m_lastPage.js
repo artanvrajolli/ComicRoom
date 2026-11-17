@@ -7,6 +7,10 @@ const Users_table = require('./m_users');
 var lastPage_table = db.define("lastPage",{
     pageNumber:{
         type:Sequelize.INTEGER
+    },
+    lastReadAt: {
+        type: Sequelize.DATE(3),
+        allowNull: true
     }
 },{
     timestamps:false

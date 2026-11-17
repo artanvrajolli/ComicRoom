@@ -445,7 +445,9 @@
         }, 150);
     }
 
-    var lastSentPage = serverPage;
+    // Save once when the reader opens, even when resuming the same page, so
+    // Continue reading reflects the latest visit as well as page turns.
+    var lastSentPage = -1;
     var persistTimer = null;
 
     function flushPersist(keepalive) {
@@ -461,6 +463,11 @@
                 method: 'PUT',
                 credentials: 'same-origin',
                 keepalive: !!keepalive
+            }).then(function (response) {
+                if (!response.ok) throw new Error('Reading progress was not saved');
+                return response.text();
+            }).then(function (text) {
+                if (text !== 'Updated') throw new Error('Reading progress was not saved');
             }).catch(function () {
                 if (lastSentPage === page) {
                     lastSentPage = -1;
@@ -486,6 +493,7 @@
     window.addEventListener('pagehide', function () {
         flushPersist(true);
     });
+    window.addEventListener('online', function () { flushPersist(false); });
 
     // ------------------------------------------------------------------
     // Preloading (paged mode): next 2 + previous 1, bounded map

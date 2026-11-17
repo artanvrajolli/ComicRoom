@@ -1,6 +1,5 @@
 const fs = require('fs')
 const { pipeline } = require('stream/promises');
-const extractComics = require('../utils/extractComic')
 const comic_table = require('../model/m_comic')
 const Op = require('sequelize').Op;
 const lastPage_table = require('../model/m_lastPage');
@@ -15,6 +14,44 @@ const thumbnails = require('../utils/thumbnails');
 const { keywordWhere, normalizeKeyword } = require('../utils/queryHelpers');
 const { canReadComic, refreshPrivateFolders, visibleComicsWhere } = require('../utils/comicAccess');
 const { loadSessionUser } = require('../config/session');
+const urlImport = require('../utils/urlImport');
+const { isThumbnailUrl } = require('../utils/imageCandidates');
+const urlPreviewBusy = new Set();
+
+const previewUrlImport = async (req, res) => {
+    const userId = req.session.userData.id;
+    if (urlPreviewBusy.has(userId)) return res.status(429).json({ error: 'An image search is already running. Please wait.' });
+    urlPreviewBusy.add(userId);
+    try {
+        res.json(await urlImport.discoverImages(req.body.url, req.body.selector || '', req.body.method ?? 'scrape'));
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    } finally {
+        urlPreviewBusy.delete(userId);
+    }
+};
+
+const PostUrlImport = async (req, res) => {
+    let tempFilePath;
+    try {
+        const source = urlImport.parsePublicUrl(req.body.source).href;
+        const images = req.body.images;
+        if (!Array.isArray(images) || !images.length || images.length > urlImport.MAX_IMAGES) throw new Error('Select between 1 and 300 images.');
+        const urls = [...new Set(images.map(value => urlImport.parsePublicUrl(value).href))];
+        if (urls.some(isThumbnailUrl)) throw new Error('Thumbnail previews cannot be imported. Find images again to select full-size originals.');
+        const uploadInfo = getUploadInfo((String(req.body.title || new URL(source).hostname).slice(0, 200)) + '.cbz');
+        const directory = path.join(process.cwd(), 'public', 'tmp');
+        await fs.promises.mkdir(directory, { recursive: true });
+        tempFilePath = path.join(directory, 'url_' + crypto.randomUUID() + '.json');
+        await fs.promises.writeFile(tempFilePath, JSON.stringify({ source, images: urls }), { flag: 'wx' });
+        const job = await queueUploadJob(req.session.userData.id, { ...uploadInfo, extension: 'url' }, tempFilePath, wantsPrivate(req.body));
+        rememberStartedUpload(req, job, uploadInfo);
+        res.json({ jobId: job.jobId });
+    } catch (error) {
+        if (tempFilePath) await fs.promises.unlink(tempFilePath).catch(() => {});
+        res.status(400).json({ error: error.message });
+    }
+};
 
 const GALLERY_ATTRIBUTES = ["id","title","author","coverImage","totalPages","savedFolder","isPrivate"];
 
@@ -718,15 +755,14 @@ const fetchPage = async (id_comic,userId)=>{
     if(typeof userId == 'undefined'){
         return 0;
     }
-    var data = await lastPage_table.findOne({
+    const [data, created] = await lastPage_table.findOrCreate({
         where:{
             comicId: id_comic,
             userId: userId
-        }
+        },
+        defaults: { pageNumber: 0, lastReadAt: new Date() }
     })
-    if(!data){
-        return 0;
-    }
+    if (!created) await data.update({ lastReadAt: new Date() });
     return data.pageNumber;
 }
 
@@ -1188,6 +1224,8 @@ const PostChunkedUpload = async (req, res) => {
 };
 
 module.exports = {  
+    previewUrlImport,
+    PostUrlImport,
     addComicPages,
     canManageComic,
     deleteComic,

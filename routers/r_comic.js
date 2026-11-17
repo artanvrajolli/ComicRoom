@@ -18,6 +18,8 @@ router.get("/upload",checkIfisOnline,(req,res)=>{
 
 // comic upload post
 router.post("/upload",PostComicUpload)
+router.post('/import-url/preview', requireLoginJson, require('../controller/c_comic').previewUrlImport)
+router.post('/import-url', requireLoginJson, require('../controller/c_comic').PostUrlImport)
 
 // chunked upload endpoint
 router.post("/upload-chunk", checkIfisOnline, PostChunkedUpload)

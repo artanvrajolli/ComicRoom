@@ -17,20 +17,22 @@ async function updateOrCreate(req) {
         return false;
     }
 
+    const lastReadAt = new Date();
     // Single INSERT ... ON DUPLICATE KEY UPDATE when the (userId, comicId) unique index exists.
     if (dbIndexes.hasLastPageUniqueIndex()) {
         await lastPage_table.upsert({
             comicId,
             userId,
-            pageNumber
+            pageNumber,
+            lastReadAt
         }, {
-            fields: ['pageNumber'],
+            fields: ['pageNumber', 'lastReadAt'],
             returning: false
         });
         return true;
     }
 
-    const [affected] = await lastPage_table.update({ pageNumber }, {
+    const [affected] = await lastPage_table.update({ pageNumber, lastReadAt }, {
         where: { comicId, userId }
     });
     if (affected === 0) {
@@ -39,7 +41,7 @@ async function updateOrCreate(req) {
             where: { comicId, userId }
         });
         if (!existing) {
-            await lastPage_table.create({ comicId, userId, pageNumber });
+            await lastPage_table.create({ comicId, userId, pageNumber, lastReadAt });
         }
     }
     return true;
@@ -88,6 +90,7 @@ const fetchComic = (req, res) => {
 }
 
 const fetchReadingList = (req, res) => {
+    res.set('Cache-Control', 'private, no-store');
     if (!req.session.userData) {
         res.status(401).json({ error: "Not authenticated" });
         return;
@@ -110,11 +113,11 @@ const fetchReadingList = (req, res) => {
         where: {
             userId: req.session.userData.id,
             pageNumber: {
-                [Op.gt]: 1
+                [Op.gte]: 0
             }
         },
         // same ordering as the first page rendered by c_readinglist.js
-        order: [['id', 'DESC']],
+        order: [['lastReadAt', 'DESC'], ['id', 'DESC']],
         offset,
         limit: PAGE_SIZE
     }).then((rows) => {

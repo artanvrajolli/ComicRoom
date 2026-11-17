@@ -6,6 +6,7 @@ const LAST_PAGE_UNIQUE_INDEX = 'lastpages_user_comic_unique';
 const LAST_PAGE_FALLBACK_INDEX = 'lastpages_user_comic';
 
 const PLAIN_INDEXES = [
+    { table: 'lastPages', name: 'lastpages_user_lastread', columns: ['userId', 'lastReadAt', 'id'] },
     { table: 'comics', name: 'comics_uid', columns: ['uid'] },
     { table: 'upload_jobs', name: 'upload_jobs_status_created', columns: ['status', 'createdAt'] },
     { table: 'upload_jobs', name: 'upload_jobs_user_status', columns: ['userId', 'status'] }

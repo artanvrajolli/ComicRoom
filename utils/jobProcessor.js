@@ -1,16 +1,12 @@
 const fs = require('fs');
 const path = require('path');
-const extractComics = require('./extractComic');
+const comicProcessing = require('./comicProcessing');
 const comic_table = require('../model/m_comic');
 const UploadJob = require('../model/m_uploadJob');
-const { extractMetadataFromFilename, getUploadFolderPath, invalidateComicAssets, resolveComicAssets, sanitizeUploadFileName } = require('./comicStorage');
+const { invalidateComicAssets } = require('./comicStorage');
 const thumbnails = require('./thumbnails');
-const { decideBundle, detectComicMetadata } = require('./aiMetadata');
-const { cleanLabel, planComicParts } = require('./comicBundles');
 const { refreshPrivateFolders } = require('./comicAccess');
 
-// Bundles: AI metadata for at most this many comics per upload.
-const MAX_AI_PARTS = 30;
 
 class JobProcessor {
     constructor() {
@@ -62,6 +58,7 @@ class JobProcessor {
             this.cleanupInterval = null;
         }
         console.log('Job processor stopped');
+        comicProcessing.stop();
     }
 
     async processNextJob() {
@@ -70,7 +67,6 @@ class JobProcessor {
         }
 
         let job = null;
-        let workingFilePath = '';
 
         try {
             this.isProcessing = true;
@@ -95,86 +91,30 @@ class JobProcessor {
                 errorMessage: null
             });
 
-            const uploadFolderPath = getUploadFolderPath(job.comicFolderId);
-            const safeFileName = sanitizeUploadFileName(job.fileName);
             const knownTitles = await this.getKnownTitles(job.userId);
-            const extractedMetadata = extractMetadataFromFilename(safeFileName, { knownTitles });
-            workingFilePath = job.tempFilePath;
-
-            if (!fs.existsSync(uploadFolderPath)) {
-                fs.mkdirSync(uploadFolderPath, { recursive: true });
-            }
-
-            if (job.extension === "cbr") {
-                const rarPath = job.tempFilePath + ".rar";
-                if (fs.existsSync(job.tempFilePath)) {
-                    fs.renameSync(job.tempFilePath, rarPath);
-                }
-                workingFilePath = rarPath;
-            }
-
-            await job.update({ progress: 30 });
-
-            console.log(`Extracting comic for job ${job.jobId}...`);
-            await extractComics(workingFilePath, job.extension, job.comicFolderId);
+            const result = await comicProcessing.run({
+                jobId: job.jobId,
+                comicFolderId: job.comicFolderId,
+                fileName: job.fileName,
+                tempFilePath: job.tempFilePath,
+                extension: job.extension,
+                knownTitles
+            }, progress => job.update({ progress }));
             invalidateComicAssets(job.comicFolderId);
-
-            // One archive may hold several comics (nested archives, one folder per
-            // issue, ...). Split them; ambiguous cases ask the AI decision model.
-            await job.update({ progress: 60 });
-            const plan = await planComicParts(job.comicFolderId, safeFileName, {
-                decide: decideBundle,
-                log: (message) => console.log(`Job ${job.jobId}: ${message}`)
-            });
-            const parts = plan.parts.filter(part => {
-                const assets = resolveComicAssets(part.folder);
-                return assets.viewerType === 'image' || assets.viewerType === 'pdf';
-            });
-            if (parts.length === 0) {
+            if (!result?.comics?.length) {
                 throw new Error('No supported content was found in the uploaded file.');
-            }
-            if (plan.bundle) {
-                console.log(`Job ${job.jobId}: bundle with ${parts.length} comics (${plan.reason})`);
             }
 
             const createdComics = [];
-            for (let index = 0; index < parts.length; index++) {
-                const part = parts[index];
-                const comicAssets = resolveComicAssets(part.folder);
-                const isBundlePart = parts.length > 1;
-
-                let aiMetadata = null;
-                // One AI call per comic; very large bundles fall back to file names.
-                if (index < MAX_AI_PARTS) {
-                    try {
-                        aiMetadata = await detectComicMetadata(part.folder, comicAssets.images);
-                    } catch (error) {
-                        console.error('AI metadata detection failed:', error.message);
-                    }
-                }
-                if (aiMetadata) {
-                    const found = Array.isArray(aiMetadata.found) ? aiMetadata.found : [];
-                    console.log(`AI metadata for job ${job.id}${isBundlePart ? ` part ${index + 1}/${parts.length}` : ''}: ${found.length ? 'found ' + found.join(', ') : 'nothing visible'}; using filename for anything missing`);
-                }
-
-                // Bundle parts are named after their own archive/folder, not the outer file.
-                const fallback = isBundlePart && part.label
-                    ? extractMetadataFromFilename(part.label + '.cbz', { knownTitles })
-                    : extractedMetadata;
-                const fallbackTitle = (isBundlePart && part.label) ? cleanLabel(part.label) : fallback.title;
-
+            for (const prepared of result.comics) {
+                invalidateComicAssets(prepared.savedFolder);
                 const comicData = await comic_table.create({
-                    savedFolder: part.folder,
+                    ...prepared,
                     uid: job.userId,
-                    title: (aiMetadata && aiMetadata.title) || fallbackTitle || fallback.title,
-                    author: (aiMetadata && aiMetadata.author) || (isBundlePart ? '' : (fallback.author || '')),
-                    description: (aiMetadata && aiMetadata.description) || '',
-                    coverImage: comicAssets.coverImage,
-                    totalPages: comicAssets.totalPages,
                     isPrivate: !!job.makePrivate
                 });
                 createdComics.push(comicData);
-                await job.update({ progress: Math.min(99, 60 + Math.round(((index + 1) / parts.length) * 39)) });
+                await job.update({ progress: Math.min(99, 90 + Math.round(createdComics.length / result.comics.length * 9)) });
             }
 
             // Guard the new folders' page files before anyone is told the comic exists.
@@ -189,16 +129,7 @@ class JobProcessor {
                 resultComicIds: createdComics.map(comic => comic.id).join(',')
             });
 
-            try {
-                if (workingFilePath && fs.existsSync(workingFilePath)) {
-                    fs.unlinkSync(workingFilePath);
-                }
-                if (job.extension === "cbr" && fs.existsSync(job.tempFilePath)) {
-                    fs.unlinkSync(job.tempFilePath);
-                }
-            } catch (cleanupError) {
-                console.error('Error cleaning up temp files:', cleanupError);
-            }
+            await this.removeJobTempFiles(job);
 
             console.log(`Job ${job.jobId} completed successfully (${createdComics.length} comic${createdComics.length === 1 ? '' : 's'})`);
             createdComics.forEach(comic => thumbnails.warmThumbnail(comic));
@@ -334,4 +265,4 @@ function isSafeTempUploadPath(filePath) {
 const jobProcessor = new JobProcessor();
 
 module.exports = jobProcessor;
-module.exports.isSafeTempUploadPath = isSafeTempUploadPath; 
+module.exports.isSafeTempUploadPath = isSafeTempUploadPath;

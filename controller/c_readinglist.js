@@ -8,6 +8,7 @@ const COMIC_CARD_ATTRIBUTES = ["id", "title", "author", "coverImage", "totalPage
 const LAST_PAGE_ATTRIBUTES = ["id", "pageNumber", "comicId", "userId"];
 
 var getreadingList = (req, res) => {
+    res.set('Cache-Control', 'private, no-store');
     var searchKeywords = normalizeKeyword(req.query.keyword);
     var msg = req.session.msg;
     req.session.msg = "";
@@ -27,10 +28,10 @@ var getreadingList = (req, res) => {
         where: {
             userId: req.session.userData.id,
             pageNumber: {
-                [Op.gt]: 1 // fetch 1 > pages saved
+                [Op.gte]: 0
             }
         },
-        order: [['id', 'DESC']],
+        order: [['lastReadAt', 'DESC'], ['id', 'DESC']],
         limit: 12
     }).then((data) => {
         if (data.length == 0) {
