@@ -1062,6 +1062,9 @@ body.cr-sheet-open {
   padding: 0;
   list-style: none;
 }
+.cr-grid > li {
+  min-width: 0;
+}
 @media (min-width: 560px) {
   .cr-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1081,7 +1084,8 @@ body.cr-sheet-open {
 }
 @media (min-width: 1200px) {
   .cr-grid {
-    grid-template-columns: repeat(6, 1fr);
+    /* minmax(0, …): a plain 1fr track grows to fit a large cover image */
+    grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 }
 
